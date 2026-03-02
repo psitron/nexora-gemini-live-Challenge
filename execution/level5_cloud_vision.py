@@ -145,7 +145,7 @@ class Level5CloudVisionExecutor:
             
             # Draw red box around the element so viewer sees what we're clicking
             try:
-                from core.visual_annotator import highlight_bbox
+                from core.visual_annotator_adapter import highlight_bbox
                 highlight_bbox(denorm_bbox, duration=1.5)
             except Exception as e:
                 print(f"  [Could not draw highlight: {e}]")

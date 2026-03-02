@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coordinate Validator - Mark & Extract Positions</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1e1e1e;
+            color: #fff;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        h1 {
+            margin-bottom: 20px;
+            color: #4CAF50;
+        }
+        .upload-section {
+            background: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .upload-section input[type="file"] {
+            margin-bottom: 10px;
+        }
+        .canvas-container {
+            position: relative;
+            display: inline-block;
+            border: 2px solid #4CAF50;
+            margin-bottom: 20px;
+            cursor: crosshair;
+        }
+        canvas {
+            display: block;
+            max-width: 100%;
+            height: auto;
+        }
+        .info-panel {
+            background: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .info-row {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+            padding: 8px;
+            background: #1e1e1e;
+            border-radius: 4px;
+        }
+        .info-label {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .info-value {
+            font-family: 'Courier New', monospace;
+            color: #fff;
+        }
+        .marker {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            border: 3px solid red;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+        }
+        .marker-label {
+            position: absolute;
+            bottom: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: red;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+        .button:hover {
+            background: #45a049;
+        }
+        .button.secondary {
+            background: #555;
+        }
+        .button.secondary:hover {
+            background: #666;
+        }
+        .markers-list {
+            background: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        .marker-item {
+            background: #1e1e1e;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            border-left: 4px solid red;
+        }
+        .copy-btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        .copy-btn:hover {
+            background: #0b7dda;
+        }
+        .success-msg {
+            color: #4CAF50;
+            font-size: 12px;
+            margin-left: 5px;
+        }
+        .instructions {
+            background: #2d2d2d;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #4CAF50;
+        }
+        .instructions h3 {
+            margin-bottom: 10px;
+            color: #4CAF50;
+        }
+        .instructions ol {
+            margin-left: 20px;
+        }
+        .instructions li {
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Coordinate Validator - Mark & Extract Positions</h1>
+
+        <div class="instructions">
+            <h3>How to Use:</h3>
+            <ol>
+                <li>Upload a screenshot from your agent logs</li>
+                <li>Click on the element you want to locate (e.g., "Blank workbook")</li>
+                <li>Add a label for the marker (e.g., "Blank workbook button")</li>
+                <li>The tool extracts exact screen coordinates</li>
+                <li>Copy coordinates to compare with agent's logged coordinates</li>
+            </ol>
+        </div>
+
+        <div class="upload-section">
+            <h3>1. Upload Screenshot</h3>
+            <input type="file" id="imageUpload" accept="image/*">
+            <div>
+                <label>
+                    <input type="checkbox" id="showGrid" checked>
+                    Show Grid
+                </label>
+            </div>
+        </div>
+
+        <div id="canvasSection" style="display: none;">
+            <div class="canvas-container" id="canvasContainer">
+                <canvas id="canvas"></canvas>
+            </div>
+
+            <div class="info-panel">
+                <h3>Current Mouse Position</h3>
+                <div class="info-row">
+                    <div class="info-label">X:</div>
+                    <div class="info-value" id="mouseX">-</div>
+                </div>
+                <div class="info-row">
+                    <div class="info-label">Y:</div>
+                    <div class="info-value" id="mouseY">-</div>
+                </div>
+                <div class="info-row">
+                    <div class="info-label">Image Size:</div>
+                    <div class="info-value" id="imageSize">-</div>
+                </div>
+            </div>
+
+            <div class="upload-section">
+                <h3>2. Mark Position</h3>
+                <p>Click on the screenshot where the element is located</p>
+                <input type="text" id="markerLabel" placeholder="Enter label (e.g., 'Blank workbook')"
+                       style="width: 300px; padding: 8px; margin-right: 10px; background: #1e1e1e; color: #fff; border: 1px solid #555; border-radius: 4px;">
+                <button class="button" onclick="enableMarking()">Ready to Mark</button>
+                <button class="button secondary" onclick="clearMarkers()">Clear All Markers</button>
+            </div>
+
+            <div class="markers-list" id="markersList" style="display: none;">
+                <h3>3. Extracted Coordinates</h3>
+                <div id="markersContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let canvas, ctx, img;
+        let markers = [];
+        let markingEnabled = false;
+        let showGrid = true;
+        let canvasScale = 1;
+
+        document.getElementById('imageUpload').addEventListener('change', handleImageUpload);
+        document.getElementById('showGrid').addEventListener('change', (e) => {
+            showGrid = e.target.checked;
+            if (img) drawCanvas();
+        });
+
+        function handleImageUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                img = new Image();
+                img.onload = function() {
+                    setupCanvas();
+                    drawCanvas();
+                    document.getElementById('canvasSection').style.display = 'block';
+                    document.getElementById('imageSize').textContent = `${img.width} x ${img.height}`;
+                }
+                img.src = event.target.result;
+            }
+            reader.readAsDataURL(file);
+        }
+
+        function setupCanvas() {
+            canvas = document.getElementById('canvas');
+            ctx = canvas.getContext('2d');
+
+            // Set canvas to actual image size
+            canvas.width = img.width;
+            canvas.height = img.height;
+
+            // Calculate scale for display
+            const maxWidth = window.innerWidth - 100;
+            if (img.width > maxWidth) {
+                canvasScale = maxWidth / img.width;
+                canvas.style.width = maxWidth + 'px';
+                canvas.style.height = (img.height * canvasScale) + 'px';
+            }
+
+            canvas.addEventListener('click', handleCanvasClick);
+            canvas.addEventListener('mousemove', handleMouseMove);
+        }
+
+        function drawCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+
+            // Draw grid
+            if (showGrid) {
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.lineWidth = 1;
+
+                // Vertical lines every 100px
+                for (let x = 0; x < canvas.width; x += 100) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x, canvas.height);
+                    ctx.stroke();
+                }
+
+                // Horizontal lines every 100px
+                for (let y = 0; y < canvas.height; y += 100) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(canvas.width, y);
+                    ctx.stroke();
+                }
+            }
+
+            // Draw markers
+            markers.forEach(marker => {
+                // Draw crosshair
+                ctx.strokeStyle = 'red';
+                ctx.lineWidth = 2;
+
+                // Horizontal line
+                ctx.beginPath();
+                ctx.moveTo(marker.x - 20, marker.y);
+                ctx.lineTo(marker.x + 20, marker.y);
+                ctx.stroke();
+
+                // Vertical line
+                ctx.beginPath();
+                ctx.moveTo(marker.x, marker.y - 20);
+                ctx.lineTo(marker.x, marker.y + 20);
+                ctx.stroke();
+
+                // Draw circle
+                ctx.beginPath();
+                ctx.arc(marker.x, marker.y, 15, 0, 2 * Math.PI);
+                ctx.stroke();
+
+                // Draw label
+                ctx.fillStyle = 'red';
+                ctx.font = 'bold 14px Arial';
+                ctx.fillText(marker.label, marker.x + 20, marker.y - 20);
+            });
+        }
+
+        function handleMouseMove(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = Math.round((e.clientX - rect.left) * scaleX);
+            const y = Math.round((e.clientY - rect.top) * scaleY);
+
+            document.getElementById('mouseX').textContent = x;
+            document.getElementById('mouseY').textContent = y;
+        }
+
+        function enableMarking() {
+            const label = document.getElementById('markerLabel').value.trim();
+            if (!label) {
+                alert('Please enter a label for the marker');
+                return;
+            }
+            markingEnabled = true;
+            alert(`Click on the screenshot where "${label}" is located`);
+        }
+
+        function handleCanvasClick(e) {
+            if (!markingEnabled) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = Math.round((e.clientX - rect.left) * scaleX);
+            const y = Math.round((e.clientY - rect.top) * scaleY);
+
+            const label = document.getElementById('markerLabel').value.trim();
+
+            markers.push({ x, y, label });
+            drawCanvas();
+            updateMarkersList();
+
+            markingEnabled = false;
+            document.getElementById('markerLabel').value = '';
+        }
+
+        function updateMarkersList() {
+            const container = document.getElementById('markersContent');
+            const list = document.getElementById('markersList');
+
+            if (markers.length === 0) {
+                list.style.display = 'none';
+                return;
+            }
+
+            list.style.display = 'block';
+            container.innerHTML = '';
+
+            markers.forEach((marker, index) => {
+                const div = document.createElement('div');
+                div.className = 'marker-item';
+                div.innerHTML = `
+                    <strong>${marker.label}</strong>
+                    <div style="margin-top: 5px;">
+                        <span style="color: #4CAF50;">X: ${marker.x}</span> |
+                        <span style="color: #4CAF50;">Y: ${marker.y}</span>
+                        <button class="copy-btn" onclick="copyCoordinates(${marker.x}, ${marker.y})">Copy (x,y)</button>
+                        <button class="copy-btn" onclick="copyBbox(${marker.x}, ${marker.y})">Copy bbox</button>
+                        <span class="success-msg" id="copied-${index}" style="display: none;">✓ Copied!</span>
+                    </div>
+                    <div style="margin-top: 5px; font-size: 12px; color: #888;">
+                        For 40x40 box: bbox = "${marker.x - 20},${marker.y - 20},40,40"
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function copyCoordinates(x, y) {
+            navigator.clipboard.writeText(`${x},${y}`).then(() => {
+                showCopiedMessage();
+            });
+        }
+
+        function copyBbox(x, y) {
+            // 40x40 box centered on click point
+            const bbox = `${x - 20},${y - 20},40,40`;
+            navigator.clipboard.writeText(bbox).then(() => {
+                showCopiedMessage();
+            });
+        }
+
+        function showCopiedMessage() {
+            const msg = document.querySelectorAll('.success-msg');
+            msg.forEach(m => {
+                m.style.display = 'inline';
+                setTimeout(() => m.style.display = 'none', 2000);
+            });
+        }
+
+        function clearMarkers() {
+            if (confirm('Clear all markers?')) {
+                markers = [];
+                drawCanvas();
+                updateMarkersList();
+            }
+        }
+    </script>
+</body>
+</html>

@@ -46,7 +46,7 @@ def highlight_bbox(
     bbox: str,
     duration: float = 0.8,
     fade_out_seconds: float = 1.2,
-) -> None:
+) -> dict:
     """
     Draw a red rectangle on screen at exact coordinates.
 
@@ -54,16 +54,44 @@ def highlight_bbox(
     then returns. The fade-out continues in a background thread.
 
     bbox: "x,y,w,h" in screen coordinates
+
+    Returns:
+        dict with annotation details: {
+            "bbox": bbox string,
+            "x": int, "y": int, "w": int, "h": int,
+            "center_x": int, "center_y": int,
+            "timestamp": float
+        }
     """
     try:
         x, y, w, h = _parse_bbox(bbox)
-    except Exception:
-        return
+    except Exception as e:
+        return {
+            "error": str(e),
+            "bbox": bbox,
+            "timestamp": time.time()
+        }
 
     if not HAS_PIL:
-        return
+        return {
+            "error": "PIL not available",
+            "bbox": bbox,
+            "timestamp": time.time()
+        }
 
     print(f"  [Red box at ({x},{y}) {w}x{h}]")
+
+    # Build result with annotation details
+    annotation_info = {
+        "bbox": bbox,
+        "x": x,
+        "y": y,
+        "w": w,
+        "h": h,
+        "center_x": x + w // 2,
+        "center_y": y + h // 2,
+        "timestamp": time.time()
+    }
 
     visible_event = threading.Event()
 
@@ -72,6 +100,7 @@ def highlight_bbox(
             _create_overlay(x, y, w, h, duration, fade_out_seconds, visible_event)
         except Exception as e:
             print(f"  [Annotation error: {e}]")
+            annotation_info["error"] = str(e)
             visible_event.set()
 
     t = threading.Thread(target=_overlay, daemon=True)
@@ -79,6 +108,8 @@ def highlight_bbox(
 
     visible_event.wait(timeout=2.0)
     time.sleep(min(duration, 0.4))
+
+    return annotation_info
 
 
 # ---- Win32 overlay implementation ----

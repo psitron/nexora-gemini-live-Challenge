@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from execution.level0_programmatic import Level0ProgrammaticExecutor, ActionResult
 from execution.level1_dom import Level1DomExecutor
-from execution.level2_ui_tree import Level2UiTreeExecutor
+from execution.platform_adapter import get_desktop_adapter  # Auto-detects platform
 from execution.level3_pattern import PatternMatchExecutor
 from execution.level4_local_vision import Level4LocalVisionExecutor
 from execution.level5_cloud_vision import Level5CloudVisionExecutor
@@ -28,7 +28,7 @@ class ExecutionHierarchy:
     def __init__(self) -> None:
         self._l0 = Level0ProgrammaticExecutor()
         self._l1 = Level1DomExecutor()
-        self._l2 = Level2UiTreeExecutor()
+        self._l2 = get_desktop_adapter()  # Auto-selects Windows/macOS/Linux executor
         self._l3 = PatternMatchExecutor()
         self._l4 = Level4LocalVisionExecutor()
         self._l5 = Level5CloudVisionExecutor()

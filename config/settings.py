@@ -21,15 +21,16 @@ from dotenv import load_dotenv
 class ModelSettings:
     # Vision model configuration
     vision_provider: str  # "gemini" or "nova"
-    
+    reflection_provider: str  # "gemini", "claude", or "nova"
+
     # Gemini settings
     gemini_api_key: Optional[str]
     gemini_vision_model: str
-    
+
     # Nova (Bedrock) settings
     nova_region: str
     nova_model_id: str
-    
+
     # Other models (legacy)
     anthropic_api_key: Optional[str]
     anthropic_task_model: str
@@ -104,15 +105,16 @@ def load_settings(dotenv: bool = True) -> Settings:
     models = ModelSettings(
         # Vision model provider selection
         vision_provider=os.getenv("VISION_PROVIDER", "gemini").lower(),
-        
+        reflection_provider=os.getenv("REFLECTION_PROVIDER", "gemini").lower(),
+
         # Gemini configuration (model name only defaulted here)
         gemini_api_key=os.getenv("GEMINI_API_KEY"),
         gemini_vision_model=os.getenv("GEMINI_VISION_MODEL", "gemini-3-flash-preview"),
-        
+
         # Nova (Bedrock) configuration (region and model ID only defaulted here)
         nova_region=os.getenv("NOVA_REGION", "us-east-1"),
         nova_model_id=os.getenv("NOVA_MODEL_ID", "us.amazon.nova-lite-v1:0"),
-        
+
         # Other models (legacy)
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
         anthropic_task_model=os.getenv("ANTHROPIC_TASK_MODEL", "claude-3-5-sonnet-20241022"),

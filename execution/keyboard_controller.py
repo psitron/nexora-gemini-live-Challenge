@@ -42,7 +42,7 @@ def press_keys(*keys: str, annotation: bool = True) -> KeyboardResult:
         
         if annotation:
             try:
-                from core.visual_annotator import highlight_bbox
+                from core.visual_annotator_adapter import highlight_bbox
                 from core.monitor_utils import get_selected_monitor
                 
                 # Show annotation at top-center of monitor

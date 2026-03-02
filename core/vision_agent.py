@@ -38,6 +38,7 @@ from config.settings import get_settings
 from core.monitor_utils import get_selected_monitor
 from core.vision_models import create_vision_model, VisionModel, VisionModelResponse
 from perception.visual.screenshot import capture_selected_monitor
+from execution.educational_mouse_controller import EducationalMouseController
 
 
 @dataclass
@@ -67,6 +68,7 @@ class VisionAgent:
         self._action_history: List[str] = []
         self._scale = 1.0
         self._monitor_offset = (0, 0)
+        self._current_screenshot: Optional[Image.Image] = None  # Store current screenshot for OCR
         if self._monitor_rect:
             self._monitor_offset = (self._monitor_rect[0], self._monitor_rect[1])
         
@@ -88,7 +90,19 @@ class VisionAgent:
             raise ValueError(f"Unknown vision provider: {provider}. Set VISION_PROVIDER to 'gemini' or 'nova' in .env")
         
         print(f"[Vision Model] Using: {self._vision_model.get_model_name()}")
-        
+
+        # Educational mouse controller for visible movements
+        # Enable educational mode by default (set to False for fast mode)
+        educational_mode = os.getenv("EDUCATIONAL_MODE", "true").lower() == "true"
+        self._mouse_controller = EducationalMouseController(educational_mode=educational_mode)
+        if educational_mode:
+            print(f"[Educational Mode] ENABLED - Students will see mouse movements")
+            print(f"  Movement duration: {self._mouse_controller.MOVEMENT_DURATION}s")
+            print(f"  Pause before click: {self._mouse_controller.PAUSE_BEFORE_CLICK}s")
+            print(f"  Pause after click: {self._mouse_controller.PAUSE_AFTER_CLICK}s")
+        else:
+            print(f"[Educational Mode] DISABLED - Using fast direct movements")
+
         # Debug mode setup
         self._debug_mode = os.getenv("DEBUG_MODE", "false").lower() == "true"
         self._debug_dir = None
@@ -149,6 +163,7 @@ class VisionAgent:
         steps = 0
         consecutive_failures = 0
         previous_actions: List[str] = []
+        last_action_summary = ""  # Track what happened last for self-assessment
 
         while steps < self.MAX_STEPS:
             steps += 1
@@ -156,6 +171,7 @@ class VisionAgent:
             print(f"\n{'='*60}")
             print(f"Step {steps}: Capturing screen...")
             screenshot = capture_selected_monitor()
+            self._current_screenshot = screenshot  # Store for OCR (avoid re-capture)
             small_screenshot = self._resize_screenshot(screenshot)
             
             # Debug: save screenshots
@@ -165,7 +181,10 @@ class VisionAgent:
                 self._log_debug(f"Step {steps}: Screenshots saved")
 
             print(f"Step {steps}: AI analyzing (scale={self._scale:.2f}x)...")
-            action = self._ask_vision_ai(small_screenshot, goal, previous_actions, step_num=steps)
+            action = self._ask_vision_ai(
+                small_screenshot, goal, previous_actions,
+                step_num=steps, last_action_summary=last_action_summary
+            )
 
             if action is None:
                 consecutive_failures += 1
@@ -213,20 +232,33 @@ class VisionAgent:
                     self._log_debug("\nAction History:\n" + "\n".join([f"  {i+1}. {a}" for i, a in enumerate(previous_actions)]))
                 return VisionAgentResult(True, steps, action.description)
 
-            # Loop detection
+            # Loop detection - catch repeated identical actions
             action_key = f"{action.action_type}:{action.target}"
             recent = self._action_history[-5:]
             repeat_count = sum(1 for a in recent if a == action_key)
             
+            # Also detect "same type of action with similar target" (e.g. type_text with same path twice)
+            recent_types = [a.split(":")[0] for a in recent]
+            type_repeat = sum(1 for t in recent_types if t == action.action_type)
+            
             if action.action_type == "open_search" and repeat_count >= 1:
-                # open_search already tried - the app may have opened but Gemini
-                # doesn't realize. Close any search overlay and let Gemini re-assess.
                 print(f"  [LOOP] open_search repeated {repeat_count+1}x, closing search and re-assessing")
                 import pyautogui
                 pyautogui.press("escape")
                 time.sleep(0.5)
                 self._action_history.append("keyboard:escape")
                 previous_actions.append("keyboard(escape): Close search overlay (loop recovery)")
+                last_action_summary = "keyboard(escape) - succeeded. Closed search overlay due to loop detection."
+                continue
+            elif action.action_type == "type_text" and repeat_count >= 1:
+                # Same text typed again - skip and press Enter instead
+                print(f"  [LOOP] type_text repeated with same text, pressing Enter instead")
+                import pyautogui
+                pyautogui.press("enter")
+                time.sleep(0.5)
+                self._action_history.append("keyboard:enter")
+                previous_actions.append("keyboard(enter): Press Enter (type_text loop recovery)")
+                last_action_summary = "keyboard(enter) - succeeded. Pressed Enter instead of retyping same text."
                 continue
             elif action.action_type == "click_position" and repeat_count >= 1:
                 print(f"  [LOOP] Click position repeated, trying keyboard action instead")
@@ -258,8 +290,12 @@ class VisionAgent:
             
             success = self._execute_action(action)
             
+            # Build last_action_summary for next step's self-assessment
+            status_word = "succeeded" if success else "FAILED"
+            last_action_summary = f"{action.action_type}({action.target}) - {status_word}. {action.description}"
+            
             if self._debug_mode:
-                status = "✓ SUCCESS" if success else "✗ FAILED"
+                status = "[OK] SUCCESS" if success else "[X] FAILED"
                 self._log_debug(
                     f"Result: {status}\n"
                     f"Action: {action.action_type}({action.target})"
@@ -270,7 +306,7 @@ class VisionAgent:
 
             if action.action_type == "wait":
                 time.sleep(2)
-            elif action.action_type == "open_search":
+            elif action.action_type in ("open_search", "run_command"):
                 time.sleep(1)
             elif action.action_type in ("click_text", "click_position"):
                 time.sleep(0.8)
@@ -292,53 +328,91 @@ class VisionAgent:
     # ---- Vision AI ----
 
     def _ask_vision_ai(
-        self, screenshot: Image.Image, goal: str, previous_actions: List[str], step_num: int = 0
+        self, screenshot: Image.Image, goal: str, previous_actions: List[str],
+        step_num: int = 0, last_action_summary: str = ""
     ) -> Optional[VisionAction]:
         """Ask the vision AI model to decide the next action."""
         try:
+            # Extract knowledge buffer from previous_actions if present
+            known_facts = ""
+            action_history = []
+            for action in previous_actions:
+                if action.startswith("KNOWN FACTS:"):
+                    known_facts = action
+                else:
+                    action_history.append(action)
+
+            # Build history section with knowledge buffer prominently displayed
             history = ""
-            if previous_actions:
-                recent = previous_actions[-6:]
-                history = "\n\nActions already taken:\n" + "\n".join(
+            if known_facts:
+                history += f"\n\n[FACTS] {known_facts}"
+                history += "\n[WARNING] DO NOT REPEAT these completed actions. Move to the next step!"
+
+            if action_history:
+                recent = action_history[-6:]
+                history += "\n\nActions already taken:\n" + "\n".join(
                     f"  {i+1}. {a}" for i, a in enumerate(recent)
                 )
+
+            # Self-assessment prompt (inspired by Claude Computer Use)
+            assessment = ""
+            if last_action_summary:
+                assessment = f"""
+
+SELF-ASSESSMENT (do this BEFORE choosing next action):
+Your last action was: {last_action_summary}
+Look at this screenshot carefully. Did your last action succeed?
+- If YES: move on to the NEXT step toward the goal. Do NOT repeat the same action.
+- If NO: try a DIFFERENT approach. Do not repeat what failed.
+- If you see the SAME screen as last time, your action probably FAILED - try something different!
+- If UNSURE: look for visual clues (new window opened? text appeared? dialog changed?)"""
 
             img_w, img_h = screenshot.size
 
             prompt = f"""You are a Windows PC automation agent. Analyze this screenshot ({img_w}x{img_h} pixels) and decide the next action.
 
 GOAL: {goal}
-{history}
+{history}{assessment}
+
+SCREENING RULES:
+- NEVER click text from console/terminal/debug output (e.g. "Step N:", "AI analyzing", "Result")
+- If goal says "open X", FIRST action MUST be open_search with app name X
+- To navigate to a folder path, use "run_command" with the path (faster than File Explorer)
+- ONLY interact with real desktop: taskbar, apps, files, windows
 
 Return ONE JSON object. No markdown, no code blocks, no explanation.
-
-CRITICAL: For EVERY action, you MUST provide "hint_x" and "hint_y" - the approximate pixel coordinates (in this {img_w}x{img_h} image) of the target element. These coordinates are used to find and annotate the correct element on screen.
 
 Format: {{"action_type":"...","target":"...","description":"...","highlight_text":"...","hint_x":N,"hint_y":N}}
 
 action_types:
 - "open_search" - Open Windows search and search for an app. target=app name. hint_x/hint_y=taskbar search area.
-- "click_text" - Click visible text. target=exact text to click. hint_x/hint_y=approximate center of that text.
-- "click_position" - Click at coordinates. target="x,y" (in this image). hint_x/hint_y=same coordinates.
-- "drag" - Click-and-drag (hold mouse, move, release). target="x1,y1,x2,y2" (start and end positions in this image). Use for drawing in Paint. hint_x/hint_y=start position.
-- "keyboard" - Press keys. target=keys like "escape","enter","ctrl+m","tab","down","right". hint_x/hint_y=position of element being activated.
-- "type_text" - Type into focused field. target=text to type. hint_x/hint_y=position of the text input field.
+- "run_command" - Run a shell command (Win+R). target=command string (e.g. "explorer E:\\folder" or "notepad"). hint_x/hint_y=-1,-1. Use this for opening folders or running programs directly.
+- "click_text" - Click visible text on screen. target=exact text. hint_x/hint_y=center of that text.
+- "click_position" - Click at coordinates. target="x,y" (in this {img_w}x{img_h} image). hint_x/hint_y=same.
+- "drag" - Click-and-drag. target="x1,y1,x2,y2" (in this image). hint_x/hint_y=start position.
+- "keyboard" - Press keys. target=keys like "escape","enter","ctrl+s","f5". hint_x/hint_y=element being activated.
+- "type_text" - Type into focused field. target=text to type. hint_x/hint_y=position of input field.
+- "scroll" - Scroll up or down. target="up" or "down". hint_x/hint_y=area to scroll.
 - "wait" - Wait for loading. target=reason. hint_x=-1,hint_y=-1.
 - "done" - Goal complete. target=summary. hint_x=-1,hint_y=-1.
 
 RULES:
-1. To open ANY application, ALWAYS use "open_search" with the app name. Never click "Search" text.
-2. If the goal mentions opening an app (e.g. "open notepad", "open Chrome"), your FIRST action must be "open_search" with that app name. Do NOT click random text or suggestions on screen first.
-3. IGNORE and NEVER click text that looks like: console output, terminal logs, step labels, "Step N:", "AI analyzing", "Capturing screen", or any text that is clearly from a development/agent UI. Only interact with the user's real desktop and application windows.
-4. If a popup/dialog blocks, close it first (keyboard: escape, or click its X/OK button).
-5. If the same action was tried and failed (see history), try something DIFFERENT.
-6. For click_position, provide coordinates in this {img_w}x{img_h} image space.
-7. When typing into a terminal/command prompt, use type_text then keyboard: enter.
-8. In Excel/spreadsheets, use keyboard: tab to move between cells. Do NOT click individual cells.
-9. If you just pressed Tab and moved to a cell, you can type immediately - no need to click the cell.
-10. In Paint: to draw shapes, you MUST use "drag" action (click-and-drag from start to end). Simple clicks do NOT draw shapes.
-11. In Jupyter: After clicking '+' to add a cell, the new cell is automatically focused. Type immediately - do NOT click '+' again.
-12. hint_x and hint_y MUST be pixel coordinates in this {img_w}x{img_h} image pointing to the target.
+1. To open ANY app, use "open_search" with app name. Never click "Search" text.
+2. If goal says "open X", FIRST action MUST be "open_search" with that app.
+3. To navigate to a folder/file path, prefer "run_command" with "explorer <path>".
+4. IGNORE console/terminal/debug text. Only interact with real desktop and apps.
+5. If a popup/dialog blocks, close it first (keyboard: escape, or click its X/OK).
+6. If same action tried and failed, try something DIFFERENT. Try keyboard shortcuts!
+7. NEVER repeat the same action more than once.
+8. hint_x/hint_y MUST be pixel coordinates in this {img_w}x{img_h} image.
+9. PREFER KEYBOARD SHORTCUTS over clicking when available:
+   - Ctrl+N = New document/workbook/file (Excel, Word, Notepad, etc.)
+   - Ctrl+S = Save
+   - Ctrl+O = Open file
+   - Ctrl+W = Close tab/window
+   - Tab = Move to next cell/field
+   - Enter = Confirm/submit
+   If clicking a button fails, ALWAYS try the keyboard shortcut next.
 
 JSON only:"""
 
@@ -380,9 +454,28 @@ JSON only:"""
             # Debug: log parsed action
             if self._debug_mode:
                 self._log_debug(f"Step {step_num} - Parsed Action: {json.dumps(data, indent=2)}")
+            
+            # Validate action: block clicking console/agent text
+            action_type = data.get("action_type", "wait")
+            target = data.get("target", "").lower()
+            
+            # Block patterns that indicate agent/console UI
+            blocked_patterns = [
+                "step ", "ai analyzing", "capturing screen", "executing",
+                "click on the suggested", "suggested action", "command output",
+                "terminal", "console", "debug", "session", "result:", "success", "failed"
+            ]
+            
+            if action_type == "click_text":
+                for pattern in blocked_patterns:
+                    if pattern in target:
+                        print(f"  [FILTER] Blocked click_text on agent/console text: '{target[:50]}'")
+                        if self._debug_mode:
+                            self._log_debug(f"Step {step_num} - BLOCKED: click_text contains pattern '{pattern}'")
+                        return None  # Force AI to retry with a different action
 
             return VisionAction(
-                action_type=data.get("action_type", "wait"),
+                action_type=action_type,
                 target=data.get("target", ""),
                 description=data.get("description", ""),
                 highlight_text=data.get("highlight_text", ""),
@@ -460,6 +553,8 @@ JSON only:"""
     def _execute_action(self, action: VisionAction) -> bool:
         if action.action_type == "open_search":
             return self._do_open_search(action)
+        elif action.action_type == "run_command":
+            return self._do_run_command(action)
         elif action.action_type == "click_text":
             return self._do_click_text(action)
         elif action.action_type == "click_position":
@@ -470,6 +565,8 @@ JSON only:"""
             return self._do_keyboard(action)
         elif action.action_type == "type_text":
             return self._do_type_text(action)
+        elif action.action_type == "scroll":
+            return self._do_scroll(action)
         elif action.action_type == "wait":
             print(f"  Waiting: {action.target}")
             return True
@@ -482,12 +579,21 @@ JSON only:"""
     # ---- open_search ----
 
     def _do_open_search(self, action: VisionAction) -> bool:
+        """Open Windows search, type query, and click best result.
+
+        Strategy:
+        1. Try Win+S to open search (with retry)
+        2. Type the query
+        3. Try vision detection to find the best result
+        4. If vision fails, try OCR
+        5. If both fail, press Enter for best match
+        """
         import pyautogui
-        from core.visual_annotator import highlight_bbox
+        from core.visual_annotator_adapter import highlight_bbox
 
         query = action.target
         hint = (action.hint_x, action.hint_y) if action.hint_x >= 0 else None
-        
+
         if self._debug_mode:
             self._log_debug(
                 f"Action: open_search\n"
@@ -501,101 +607,160 @@ JSON only:"""
         if taskbar_bbox:
             highlight_bbox(taskbar_bbox, duration=0.6, fade_out_seconds=0.8)
 
-        print(f"  Opening search (Win+S)...")
-        pyautogui.hotkey("win", "s")
-        time.sleep(1.2)
+        # Try to open search with retry (Win+S sometimes fails)
+        for attempt in range(2):
+            if attempt == 0:
+                print(f"  Opening search (Win+S)...")
+                pyautogui.hotkey("win", "s")
+            else:
+                print(f"  Retrying search open (Win key)...")
+                pyautogui.press("win")
+            time.sleep(1.2)
 
+            # Check if search opened by taking a screenshot and looking for search UI
+            check_screenshot = capture_selected_monitor()
+            self._current_screenshot = check_screenshot
+            # If we got here, assume search is open (we can't reliably detect it without vision)
+            break
+
+        # Type the query character by character
         print(f"  Typing '{query}'...")
         for char in query:
             pyautogui.write(char, interval=0)
             time.sleep(0.05)
         time.sleep(1.5)
 
-        # Find ALL matches in results area (excludes title-bar y<80)
-        print(f"  Finding '{query}' in search results...")
-        all_matches = self._find_all_text_in_results_area(query, hint_pos=hint)
+        # Strategy: Press Enter to launch the top search result
+        # This is the MOST RELIABLE approach - Windows search auto-selects the best match
+        # Trying to click a specific result is error-prone (vision/OCR often miss)
+        print(f"  Pressing Enter to launch top result for '{query}'...")
+        pyautogui.press("enter")
+        time.sleep(2.0)  # Wait for app to launch
+        return True
+
+    # ---- run_command ----
+
+    def _do_run_command(self, action: VisionAction) -> bool:
+        """Run a shell command via Win+R (Run dialog). Visible with annotations for training."""
+        import pyautogui
+        from core.visual_annotator_adapter import highlight_bbox
+        
+        command = action.target
+        print(f"  Running command: {command}")
         
         if self._debug_mode:
             self._log_debug(
-                f"OCR Search Results:\n"
-                f"  Query: '{query}'\n"
-                f"  Matches Found: {len(all_matches)}\n" +
-                (f"  Match Locations:\n" + "\n".join([f"    {i+1}. ({x},{y}) size={w}x{h}" for i, (x,y,w,h) in enumerate(all_matches)]) if all_matches else "  No matches")
+                f"Action: run_command\n"
+                f"Command: {command}",
+                section="ACTION: run_command"
             )
-
-        if not all_matches:
-            print(f"  '{query}' not found in results, pressing Enter for best match")
-            if self._debug_mode:
-                self._log_debug("OCR found no matches, falling back to Enter key")
-            pyautogui.press("enter")
-            time.sleep(1.0)
-            return True
-
-        # Use visual verification to pick correct app (handles notepad vs notepad++)
-        if len(all_matches) > 1:
-            print(f"  Found {len(all_matches)} matches, using visual verification...")
-            if self._debug_mode:
-                self._log_debug(f"Multiple matches detected, initiating visual verification with AI...")
-            bbox = self._verify_correct_match(
-                query, all_matches,
-                context=f"User searched for '{query}' in Windows search. Pick the exact app '{query}', not '{query}++' or similar."
-            )
-            if not bbox:
-                # Verification failed - use smart OCR filter instead
-                print(f"  Verification failed, using smart filter...")
-                if self._debug_mode:
-                    self._log_debug("Visual verification failed, falling back to smart heuristic filter")
-                bbox = self._smart_filter_best_match(query, all_matches)
-                if not bbox:
-                    # Still failed, fall back to Enter
-                    print(f"  Smart filter failed, pressing Enter for best match")
-                    if self._debug_mode:
-                        self._log_debug("Smart filter also failed, using Enter key fallback")
-                    pyautogui.press("enter")
-                    time.sleep(1.0)
-                    return True
-        else:
-            bbox = all_matches[0]
-            if self._debug_mode:
-                self._log_debug(f"Single match found, using it directly")
-
-        # Click the verified match
-        x, y, w, h = bbox
-        print(f"  Clicking verified '{query}' at ({x},{y}) {w}x{h}")
-        if self._debug_mode:
-            self._log_debug(
-                f"Final Click Decision:\n"
-                f"  Target Bounding Box: ({x},{y}) {w}x{h}\n"
-                f"  Click Position: ({x + w // 2}, {y + h // 2})"
-            )
-        pad = 4
-        highlight_bbox(
-            f"{x-pad},{y-pad},{w+pad*2},{h+pad*2}",
-            duration=0.8, fade_out_seconds=1.2,
-        )
-        self._smooth_click(x + w // 2, y + h // 2)
+        
+        # Annotate the taskbar area to show we're using Win+R
+        taskbar_bbox = self._find_taskbar_search_bbox()
+        if taskbar_bbox:
+            highlight_bbox(taskbar_bbox, duration=0.6, fade_out_seconds=0.8)
+        
+        # Open Run dialog
+        pyautogui.hotkey("win", "r")
         time.sleep(1.0)
+        
+        # Annotate the Run dialog (appears roughly center-left of screen)
+        if self._monitor_rect:
+            left, top, right, bottom = self._monitor_rect
+            cx = left + (right - left) // 2
+            cy = top + (bottom - top) // 2
+            # Highlight the Run dialog area
+            highlight_bbox(
+                f"{cx - 200},{cy - 30},{400},{60}",
+                duration=0.8, fade_out_seconds=1.0,
+            )
+            # Move mouse visibly to the Run dialog
+            self._smooth_click(cx, cy)
+            time.sleep(0.3)
+        
+        # Type the command character by character (visible for training)
+        for char in command:
+            pyautogui.write(char, interval=0)
+            time.sleep(0.03)
+        
+        time.sleep(0.5)
+        pyautogui.press("enter")
+        time.sleep(1.5)
+        return True
+
+    # ---- scroll ----
+
+    def _do_scroll(self, action: VisionAction) -> bool:
+        """Scroll up or down at a position, with visible annotation."""
+        import pyautogui
+        from core.visual_annotator_adapter import highlight_bbox
+        
+        direction = action.target.lower().strip()
+        clicks = 5 if direction == "down" else -5
+        
+        # Annotate the scroll area
+        if action.hint_x >= 0 and action.hint_y >= 0:
+            pad = 30
+            highlight_bbox(
+                f"{action.hint_x - pad},{action.hint_y - pad},{pad * 2},{pad * 2}",
+                duration=0.5, fade_out_seconds=0.8,
+            )
+            # Move mouse visibly to scroll position (educational mode)
+            self._mouse_controller.move_to(action.hint_x, action.hint_y, show_path=True)
+        
+        print(f"  Scrolling {direction}")
+        pyautogui.scroll(clicks)
         return True
 
     # ---- click_text ----
 
     def _do_click_text(self, action: VisionAction) -> bool:
-        """Find text on screen, draw red box around it, then click it."""
+        """Find text on screen using VISION-BASED DETECTION, draw red box, then click."""
         import pyautogui
-        from core.visual_annotator import highlight_bbox
+        from core.visual_annotator_adapter import highlight_bbox
 
         text = action.target
         hint = (action.hint_x, action.hint_y) if action.hint_x >= 0 else None
 
-        print(f"  Finding '{text}' (hint={hint})...")
-        
-        # Find ALL matches, not just one
+        print(f"  Finding '{text}' with vision-based detection...")
+
+        # NEW: Try vision-based element detection FIRST (more accurate than OCR)
+        bbox = self._find_element_with_vision(
+            element_description=f"{text} (clickable element)",
+            hint_pos=hint
+        )
+
+        if bbox:
+            x, y, w, h = bbox
+            print(f"  [OK] Vision found '{text}' at ({x},{y}) size {w}x{h}")
+
+            # Draw red box around element
+            highlight_bbox(
+                f"{x},{y},{w},{h}",
+                duration=0.8, fade_out_seconds=1.0
+            )
+
+            # Click strategy: if bbox is suspiciously large, click upper-center
+            # (vision models often return oversized bboxes that extend below the element)
+            if h > 200 or w > 300:
+                # Oversized bbox: click upper-third center
+                cx = x + w // 2
+                cy = y + h // 4  # upper quarter, not center
+                print(f"  [INFO] Large bbox detected, clicking upper portion at ({cx},{cy})")
+            else:
+                cx, cy = x + w // 2, y + h // 2
+
+            self._smooth_click(cx, cy)
+            return True
+
+        # Fallback: Try OCR (may still work for simple text)
+        print(f"  Vision detection failed, trying OCR fallback...")
         all_matches = self._find_all_text_matches(text, hint_pos=hint)
-        
+
         if not all_matches:
-            # Fallback: if Gemini provided coordinates, click there directly
+            # Last resort: AI hint coordinates (least accurate)
             if action.hint_x >= 0 and action.hint_y >= 0:
-                print(f"  OCR missed '{text}', using AI coordinates ({action.hint_x},{action.hint_y})")
+                print(f"  OCR also failed, using AI hint ({action.hint_x},{action.hint_y})")
                 pad = 15
                 highlight_bbox(
                     f"{action.hint_x-pad},{action.hint_y-pad},{pad*2},{pad*2}",
@@ -603,8 +768,11 @@ JSON only:"""
                 )
                 self._smooth_click(action.hint_x, action.hint_y)
                 return True
-            print(f"  [X] '{text}' not found")
+            print(f"  [X] '{text}' not found by any method")
             return False
+
+        # If OCR found matches, use them
+        print(f"  [OK] OCR found {len(all_matches)} match(es) for '{text}'")
 
         # If multiple matches found, use visual verification
         if len(all_matches) > 1:
@@ -630,7 +798,7 @@ JSON only:"""
     # ---- click_position ----
 
     def _do_click_position(self, action: VisionAction) -> bool:
-        from core.visual_annotator import highlight_bbox
+        from core.visual_annotator_adapter import highlight_bbox
 
         # Use hint coordinates (already scaled to screen)
         if action.hint_x >= 0 and action.hint_y >= 0:
@@ -676,7 +844,7 @@ JSON only:"""
     def _do_drag(self, action: VisionAction) -> bool:
         """Click-and-drag from start to end (for Paint drawing, etc)."""
         import pyautogui
-        from core.visual_annotator import highlight_bbox
+        from core.visual_annotator_adapter import highlight_bbox
 
         try:
             parts = action.target.split(",")
@@ -698,39 +866,47 @@ JSON only:"""
         )
 
         print(f"  Dragging from ({x1},{y1}) to ({x2},{y2})")
-        
-        # Move to start position
-        curr_x, curr_y = pyautogui.position()
-        dist = ((x1 - curr_x) ** 2 + (y1 - curr_y) ** 2) ** 0.5
-        pyautogui.moveTo(x1, y1, duration=min(max(dist / 1500, 0.2), 1.0))
-        time.sleep(0.1)
-        
-        # Drag to end position
-        pyautogui.drag(x2 - x1, y2 - y1, duration=0.5)
-        print(f"  Drag complete")
-        return True
+
+        # Use educational mouse controller for visible drag
+        result = self._mouse_controller.drag_to(x1, y1, x2, y2)
+        if result.success:
+            print(f"  Drag complete")
+            return True
+        else:
+            print(f"  [X] Drag failed: {result.message}")
+            return False
 
     # ---- keyboard ----
 
     def _do_keyboard(self, action: VisionAction) -> bool:
         import pyautogui
+        from core.visual_annotator_adapter import highlight_bbox
 
         keys = [k.strip() for k in action.target.split("+")]
         keys_str = "+".join(keys)
         print(f"  Pressing: {keys_str}")
 
-        # Annotate the element being activated if we know where it is
+        # Annotate the element being activated
+        annotated = False
         if action.highlight_text and action.hint_x >= 0:
             hint = (action.hint_x, action.hint_y)
             bbox = self._find_text_on_monitor(action.highlight_text, hint_pos=hint)
             if bbox:
-                from core.visual_annotator import highlight_bbox
                 bx, by, bw, bh = bbox
                 pad = 4
                 highlight_bbox(
                     f"{bx-pad},{by-pad},{bw+pad*2},{bh+pad*2}",
                     duration=0.5, fade_out_seconds=0.8,
                 )
+                annotated = True
+        
+        # If no text annotation, show a small indicator at hint position
+        if not annotated and action.hint_x >= 0 and action.hint_y >= 0:
+            pad = 20
+            highlight_bbox(
+                f"{action.hint_x - pad},{action.hint_y - pad},{pad * 2},{pad * 2}",
+                duration=0.4, fade_out_seconds=0.6,
+            )
 
         try:
             pyautogui.hotkey(*keys)
@@ -743,26 +919,52 @@ JSON only:"""
 
     def _do_type_text(self, action: VisionAction) -> bool:
         import pyautogui
+        from core.visual_annotator_adapter import highlight_bbox
 
-        # Annotate the input field if we know where it is
-        if action.highlight_text and action.hint_x >= 0:
-            hint = (action.hint_x, action.hint_y)
-            bbox = self._find_text_on_monitor(action.highlight_text, hint_pos=hint)
-            if bbox:
-                from core.visual_annotator import highlight_bbox
-                bx, by, bw, bh = bbox
-                pad = 4
+        # Ensure focus: click at hint or at highlighted text so the target field/window gets focus
+        if action.hint_x >= 0 and action.hint_y >= 0:
+            if action.highlight_text:
+                hint = (action.hint_x, action.hint_y)
+                bbox = self._find_text_on_monitor(action.highlight_text, hint_pos=hint)
+                if bbox:
+                    bx, by, bw, bh = bbox
+                    pad = 4
+                    highlight_bbox(
+                        f"{bx-pad},{by-pad},{bw+pad*2},{bh+pad*2}",
+                        duration=0.5, fade_out_seconds=0.8,
+                    )
+                    self._smooth_click(bx + bw // 2, by + bh // 2)
+                    time.sleep(0.2)
+                else:
+                    highlight_bbox(
+                        f"{action.hint_x-15},{action.hint_y-15},{30},{30}",
+                        duration=0.4, fade_out_seconds=0.6,
+                    )
+                    self._smooth_click(action.hint_x, action.hint_y)
+                    time.sleep(0.2)
+            else:
                 highlight_bbox(
-                    f"{bx-pad},{by-pad},{bw+pad*2},{bh+pad*2}",
-                    duration=0.5, fade_out_seconds=0.8,
+                    f"{action.hint_x-15},{action.hint_y-15},{30},{30}",
+                    duration=0.4, fade_out_seconds=0.6,
                 )
+                self._smooth_click(action.hint_x, action.hint_y)
+                time.sleep(0.2)
 
         text = action.target
         print(f"  Typing: {text}")
         try:
+            # pyautogui.write() only supports ASCII by default; for other chars use pyperclip or key down
             for char in text:
                 pyautogui.write(char, interval=0)
                 time.sleep(0.04)
+
+            # Auto-press Enter if description mentions it (common pattern in Excel/forms)
+            if action.description and ("press enter" in action.description.lower() or "press Enter" in action.description):
+                print(f"  (Auto-pressing Enter as mentioned in description)")
+                time.sleep(0.2)
+                pyautogui.press("enter")
+                time.sleep(0.3)
+
             return True
         except Exception as e:
             print(f"  [X] Typing failed: {e}")
@@ -785,14 +987,230 @@ JSON only:"""
     def _find_all_text_matches(
         self, text: str, hint_pos: Tuple[int, int] | None = None
     ) -> List[Tuple[int, int, int, int]]:
-        """Find ALL occurrences of text on screen, not just one."""
-        from core.ocr_finder import find_all_text_on_screen
+        """
+        Find ALL occurrences of text using OCR on the CURRENT screenshot.
 
+        KEY FIX: Uses self._current_screenshot (same image Gemini analyzed)
+        instead of re-capturing, eliminating timing gaps.
+        """
+        from core.ocr_finder import find_all_text_in_image
+
+        if not self._current_screenshot:
+            print("  [WARNING] No current screenshot available, falling back to screen capture")
+            from core.ocr_finder import find_all_text_on_screen
+            if self._monitor_rect:
+                left, top, right, bottom = self._monitor_rect
+                region = (left, top, right - left, bottom - top)
+                return find_all_text_on_screen(text, region=region, timeout=2.0, hint_pos=hint_pos)
+            return find_all_text_on_screen(text, timeout=2.0, hint_pos=hint_pos)
+
+        # Use the screenshot Gemini already analyzed
+        region = None
         if self._monitor_rect:
             left, top, right, bottom = self._monitor_rect
             region = (left, top, right - left, bottom - top)
-            return find_all_text_on_screen(text, region=region, timeout=2.0, hint_pos=hint_pos)
-        return find_all_text_on_screen(text, timeout=2.0, hint_pos=hint_pos)
+
+        return find_all_text_in_image(self._current_screenshot, text, hint_pos=hint_pos, region=region)
+
+    def _find_element_with_vision(
+        self, element_description: str, hint_pos: Tuple[int, int] = None
+    ) -> Optional[Tuple[int, int, int, int]]:
+        """
+        Use vision model to find a UI element by asking for its bounding box directly.
+
+        Two-pass approach:
+        1. Ask vision model for precise bounding box of the element
+        2. If that fails and hint_pos provided, ask vision model to refine the hint
+
+        Args:
+            element_description: What to find (e.g., "Blank workbook button")
+            hint_pos: Optional approximate location (in SCREEN coordinates)
+
+        Returns:
+            (x, y, w, h) bounding box in SCREEN coordinates, or None if not found
+        """
+        if not self._current_screenshot:
+            print("  [WARNING] No current screenshot for vision detection")
+            return None
+
+        img_w, img_h = self._current_screenshot.size
+
+        # Use the resized screenshot for the vision model (same as AI sees)
+        resized = self._resize_screenshot(self._current_screenshot.copy())
+        r_w, r_h = resized.size
+
+        # Pass 1: Ask vision model for bounding box directly
+        # Use a simple format to minimize truncation risk
+        prompt = f"""Look at this {r_w}x{r_h} screenshot. Find: "{element_description}"
+
+Return bounding box as: {{"x":LEFT,"y":TOP,"w":WIDTH,"h":HEIGHT}}
+If not visible: {{"x":-1,"y":-1,"w":0,"h":0}}
+ONLY output the JSON object, no other text."""
+
+        try:
+            response = self._vision_model.generate_content(
+                prompt=prompt,
+                image=resized,
+                max_tokens=1024
+            )
+
+            response_text = response.text if hasattr(response, 'text') else str(response)
+            response_text = response_text.strip()
+            finish_reason = response.finish_reason if hasattr(response, 'finish_reason') else None
+
+            print(f"  [VISION] Raw response ({len(response_text)} chars): {response_text[:200]}")
+            if finish_reason:
+                print(f"  [VISION] Finish reason: {finish_reason}")
+
+            if self._debug_mode:
+                self._log_debug(f"Vision element detection response: {response_text}")
+
+            bbox = self._parse_bbox_response(response_text)
+
+            if bbox:
+                bx, by, bw, bh = bbox
+                if bx >= 0 and by >= 0 and bw > 0 and bh > 0:
+                    # Scale from resized image to screen coordinates
+                    sx = int(bx * self._scale) + self._monitor_offset[0]
+                    sy = int(by * self._scale) + self._monitor_offset[1]
+                    sw = int(bw * self._scale)
+                    sh = int(bh * self._scale)
+                    print(f"  [OK] Vision found element at ({sx},{sy}) size {sw}x{sh}")
+
+                    # Save debug image
+                    if self._debug_dir:
+                        from PIL import ImageDraw
+                        debug_img = resized.copy()
+                        draw = ImageDraw.Draw(debug_img)
+                        draw.rectangle([bx, by, bx + bw, by + bh], outline=(255, 0, 0), width=3)
+                        safe_desc = element_description.replace(' ', '_')[:20]
+                        debug_img.save(self._debug_dir / f"vision_found_{safe_desc}.png")
+
+                    return (sx, sy, sw, sh)
+                else:
+                    print(f"  [INFO] Vision model says element not found (returned -1)")
+
+        except Exception as e:
+            print(f"  [ERROR] Vision element detection failed: {e}")
+
+        # Pass 2: If hint available, ask vision model to refine the hint area
+        if hint_pos and hint_pos[0] >= 0 and hint_pos[1] >= 0:
+            print(f"  [INFO] Trying hint refinement around ({hint_pos[0]},{hint_pos[1]})...")
+
+            # Convert hint from screen coords to resized image coords
+            hint_img_x = int((hint_pos[0] - self._monitor_offset[0]) / self._scale)
+            hint_img_y = int((hint_pos[1] - self._monitor_offset[1]) / self._scale)
+
+            # Crop a region around the hint for focused analysis
+            crop_size = 200  # pixels in resized image
+            crop_left = max(0, hint_img_x - crop_size)
+            crop_top = max(0, hint_img_y - crop_size)
+            crop_right = min(r_w, hint_img_x + crop_size)
+            crop_bottom = min(r_h, hint_img_y + crop_size)
+
+            cropped = resized.crop((crop_left, crop_top, crop_right, crop_bottom))
+            c_w, c_h = cropped.size
+
+            refine_prompt = f"""This is a {c_w}x{c_h} cropped screenshot. Find: "{element_description}"
+
+Return bounding box as: {{"x":LEFT,"y":TOP,"w":WIDTH,"h":HEIGHT}}
+Coordinates relative to this crop. If not visible: {{"x":-1,"y":-1,"w":0,"h":0}}
+ONLY output the JSON object."""
+
+            try:
+                response2 = self._vision_model.generate_content(
+                    prompt=refine_prompt,
+                    image=cropped,
+                    max_tokens=1024
+                )
+
+                response2_text = response2.text if hasattr(response2, 'text') else str(response2)
+                print(f"  [VISION] Refinement response ({len(response2_text)} chars): {response2_text.strip()[:200]}")
+                bbox2 = self._parse_bbox_response(response2_text.strip())
+
+                if bbox2:
+                    bx, by, bw, bh = bbox2
+                    if bx >= 0 and by >= 0 and bw > 0 and bh > 0:
+                        # Map from crop coords to screen coords
+                        sx = int((bx + crop_left) * self._scale) + self._monitor_offset[0]
+                        sy = int((by + crop_top) * self._scale) + self._monitor_offset[1]
+                        sw = int(bw * self._scale)
+                        sh = int(bh * self._scale)
+                        print(f"  [OK] Vision refined hint to ({sx},{sy}) size {sw}x{sh}")
+                        return (sx, sy, sw, sh)
+
+            except Exception as e:
+                print(f"  [ERROR] Hint refinement failed: {e}")
+
+            # Last resort: create a small box around the hint position
+            print(f"  [INFO] Using raw hint position as last resort")
+            w, h = 60, 40
+            return (max(0, hint_pos[0] - w // 2), max(0, hint_pos[1] - h // 2), w, h)
+
+        return None
+
+    def _parse_bbox_response(self, response_text: str) -> Optional[Tuple[int, int, int, int]]:
+        """Parse bounding box from vision model response.
+
+        Handles multiple formats:
+        1. Complete JSON: {"x": 148, "y": 339, "w": 100, "h": 60}
+        2. Partial/truncated JSON: {"x": 148, "y": 339
+        3. Comma-separated: 148, 339, 100, 60
+        4. Space-separated: 148 339 100 60
+        """
+        import json
+        import re
+
+        text = response_text.strip()
+
+        # Remove markdown code blocks
+        text = re.sub(r'```json\s*', '', text)
+        text = re.sub(r'```\s*', '', text)
+        text = text.strip()
+
+        # Strategy 1: Try complete JSON
+        match = re.search(r'\{[^}]*\}', text, re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group(0))
+                x = int(data.get('x', -1))
+                y = int(data.get('y', -1))
+                w = int(data.get('w', 0))
+                h = int(data.get('h', 0))
+                return (x, y, w, h)
+            except (json.JSONDecodeError, ValueError, KeyError):
+                pass
+
+        # Strategy 2: Extract named values from partial JSON (handles truncated responses)
+        x_match = re.search(r'"x"\s*:\s*(-?\d+)', text)
+        y_match = re.search(r'"y"\s*:\s*(-?\d+)', text)
+        w_match = re.search(r'"w"\s*:\s*(-?\d+)', text)
+        h_match = re.search(r'"h"\s*:\s*(-?\d+)', text)
+
+        if x_match and y_match:
+            x = int(x_match.group(1))
+            y = int(y_match.group(1))
+            w = int(w_match.group(1)) if w_match else 80  # default size
+            h = int(h_match.group(1)) if h_match else 50
+            print(f"  [INFO] Extracted from partial JSON: x={x}, y={y}, w={w}, h={h}")
+            return (x, y, w, h)
+
+        # Strategy 3: Look for 4 comma-separated or space-separated numbers
+        nums = re.findall(r'-?\d+', text)
+        if len(nums) >= 4:
+            x, y, w, h = int(nums[0]), int(nums[1]), int(nums[2]), int(nums[3])
+            print(f"  [INFO] Extracted 4 numbers: x={x}, y={y}, w={w}, h={h}")
+            return (x, y, w, h)
+        elif len(nums) >= 2:
+            # At least x, y - use default size
+            x, y = int(nums[0]), int(nums[1])
+            w = int(nums[2]) if len(nums) > 2 else 80
+            h = int(nums[3]) if len(nums) > 3 else 50
+            print(f"  [INFO] Extracted partial numbers: x={x}, y={y}, w={w}, h={h}")
+            return (x, y, w, h)
+
+        print(f"  [WARNING] Could not parse coordinates from: {text[:200]}")
+        return None
 
     def _verify_correct_match(
         self, text: str, all_matches: List[Tuple[int, int, int, int]], context: str
@@ -912,7 +1330,7 @@ Which option shows the CORRECT "{text}" to click? Consider:
 - Ignore search suggestions or input boxes
 
 Return ONLY the option number (0, 1, 2, etc) or -1 if none match.
-Answer with just the number, nothing else."""
+Reply with exactly one number on the first line. No explanation, no markdown, no other text."""
         
         if self._debug_dir:
             self._log_debug(
@@ -959,7 +1377,7 @@ Answer with just the number, nothing else."""
                         f"AI Selection Result:\n"
                         f"  Chosen Option: {choice}\n"
                         f"  Bounding Box: {selected_bbox}\n"
-                        f"  ✓ Valid choice"
+                        f"  [OK] Valid choice"
                     )
                 return all_matches[choice]
             else:
@@ -981,20 +1399,53 @@ Answer with just the number, nothing else."""
     ) -> Tuple[int, int, int, int] | None:
         """
         Smart OCR-based filter to pick the best match when Gemini verification fails.
-        Filters out obvious bad matches (search suggestions, category headers, etc.)
-        and prefers actual app results.
+
+        Windows Search layout:
+        - Search panel appears on RIGHT side of screen
+        - Results are in BOTTOM-RIGHT quadrant
+        - Title bars and VS Code text are in LEFT/UPPER areas
+
+        Strategy: Filter matches to only those in the search results area.
         """
         print(f"  Smart filter: analyzing {len(all_matches)} matches for '{query}'...")
-        
+
+        if not self._monitor_rect:
+            # No monitor info, fall back to first match
+            return all_matches[0] if all_matches else None
+
+        left, top, right, bottom = self._monitor_rect
+        screen_width = right - left
+        screen_height = bottom - top
+
+        # Windows search panel is typically in the RIGHT 40% of screen, BOTTOM 80%
+        search_panel_left = left + int(screen_width * 0.60)  # Right 40%
+        search_panel_top = top + int(screen_height * 0.20)   # Skip top 20% (title bars)
+
+        # Filter matches to only those in search results area
+        results_area_matches = []
+        for i, (x, y, w, h) in enumerate(all_matches):
+            # Check if match is in search panel area
+            in_search_panel = (x >= search_panel_left and y >= search_panel_top)
+
+            if in_search_panel:
+                results_area_matches.append((x, y, w, h))
+                print(f"    Match {i} at ({x},{y}): IN search panel -> KEEP")
+            else:
+                print(f"    Match {i} at ({x},{y}): Outside search panel (probably VS Code/title bar) -> SKIP")
+
+        if not results_area_matches:
+            print(f"    No matches in search panel area, using ALL matches as fallback")
+            results_area_matches = all_matches
+
         # Take screenshot to analyze match context
         full_screenshot = capture_selected_monitor()
         from PIL import Image, ImageDraw
-        
+
         scored_matches = []
-        
-        for i, (x, y, w, h) in enumerate(all_matches):
+
+        for i, (x, y, w, h) in enumerate(results_area_matches):
             score = 0
-            
+
             # Crop region around match for context analysis
             pad = 100
             crop = full_screenshot.crop((
@@ -1003,22 +1454,22 @@ Answer with just the number, nothing else."""
                 min(full_screenshot.width, x + w + pad),
                 min(full_screenshot.height, y + h + pad)
             ))
-            
+
             # Convert to grayscale for analysis
             gray = crop.convert('L')
             pixels = list(gray.getdata())
             avg_brightness = sum(pixels) / len(pixels)
-            
+
             # Rule 1: Prefer matches in "Apps" or "Best match" sections (darker backgrounds)
             if avg_brightness < 80:  # Dark background (app tiles)
                 score += 50
                 print(f"    Match {i} at ({x},{y}): Dark background (+50) -> score={score}")
-            
+
             # Rule 2: Penalize very bright backgrounds (search suggestions, headers)
             if avg_brightness > 150:
                 score -= 30
                 print(f"    Match {i} at ({x},{y}): Bright background (-30) -> score={score}")
-            
+
             # Rule 3: Prefer matches in bottom half of search panel (where app results are)
             if self._monitor_rect:
                 _, top, _, bottom = self._monitor_rect
@@ -1051,15 +1502,91 @@ Answer with just the number, nothing else."""
         print(f"  Smart filter: no good matches found")
         return None
 
-    def _smooth_click(self, x: int, y: int) -> None:
-        """Move cursor smoothly to position and click."""
-        import pyautogui
-        curr_x, curr_y = pyautogui.position()
-        dist = ((x - curr_x) ** 2 + (y - curr_y) ** 2) ** 0.5
-        pyautogui.moveTo(x, y, duration=min(max(dist / 1500, 0.2), 1.0))
-        time.sleep(0.1)
-        pyautogui.click()
-        print(f"  Clicked ({x},{y})")
+    def _ensure_window_focus_at(self, x: int, y: int) -> None:
+        """
+        Ensure the window at coordinates (x, y) is the foreground window.
+        This is CRITICAL on Windows - clicks only work on the focused window.
+        """
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+
+            # Set proper ctypes signatures (WindowFromPoint takes POINT by value)
+            user32.WindowFromPoint.argtypes = [wintypes.POINT]
+            user32.WindowFromPoint.restype = wintypes.HWND
+            user32.GetAncestor.argtypes = [wintypes.HWND, ctypes.c_uint]
+            user32.GetAncestor.restype = wintypes.HWND
+            user32.GetForegroundWindow.restype = wintypes.HWND
+            user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+            user32.SetForegroundWindow.restype = wintypes.BOOL
+
+            # Get the window at the click position
+            point = wintypes.POINT(x, y)
+            hwnd_at_point = user32.WindowFromPoint(point)
+
+            if not hwnd_at_point:
+                return
+
+            # Get the top-level ancestor (the actual app window)
+            GA_ROOT = 2
+            hwnd_root = user32.GetAncestor(hwnd_at_point, GA_ROOT)
+            if hwnd_root:
+                hwnd_at_point = hwnd_root
+
+            # Check if it's already the foreground window
+            fg_hwnd = user32.GetForegroundWindow()
+            if fg_hwnd == hwnd_at_point:
+                return  # Already focused
+
+            # Bring the window to front
+            user32.SetForegroundWindow(hwnd_at_point)
+            time.sleep(0.3)  # Wait for focus transition
+
+            # Verify focus was acquired
+            new_fg = user32.GetForegroundWindow()
+            if new_fg == hwnd_at_point:
+                print(f"  [FOCUS] Activated window at ({x},{y})")
+            else:
+                # Fallback: Alt-tab trick to force focus
+                # Windows blocks SetForegroundWindow unless current process owns focus
+                # Pressing Alt first tricks Windows into allowing the focus change
+                import pyautogui
+                pyautogui.keyDown('alt')
+                time.sleep(0.05)
+                user32.SetForegroundWindow(hwnd_at_point)
+                pyautogui.keyUp('alt')
+                time.sleep(0.2)
+                print(f"  [FOCUS] Force-activated window at ({x},{y})")
+
+        except Exception as e:
+            # Non-critical: if focus fails, try clicking anyway
+            print(f"  [FOCUS] Could not activate window: {e}")
+
+    def _smooth_click(self, x: int, y: int, retries: int = 2) -> None:
+        """
+        Move cursor smoothly to position and click.
+        Ensures target window has focus first.
+        Retries if click has no effect (screenshot unchanged).
+        """
+        # CRITICAL: Ensure target window is focused before clicking
+        self._ensure_window_focus_at(x, y)
+
+        for attempt in range(retries + 1):
+            result = self._mouse_controller.click_at(x, y, show_movement=(attempt == 0))
+            if result.success:
+                if attempt == 0:
+                    print(f"  Clicked ({x},{y})")
+                else:
+                    print(f"  Retry click #{attempt} at ({x},{y})")
+                return
+            else:
+                print(f"  [Warning] Click attempt {attempt+1} failed: {result.message}")
+                if attempt < retries:
+                    time.sleep(0.3)
+
+        print(f"  [Warning] All click attempts failed at ({x},{y})")
 
     def _find_taskbar_search_bbox(self) -> str | None:
         """Find the Windows taskbar search area using Win32 API."""
@@ -1125,20 +1652,33 @@ Answer with just the number, nothing else."""
         Find ALL occurrences of text in the upper 70% of the monitor
         (search results area). Used to disambiguate e.g. "Notepad" app
         vs "Notepad" in an open window's title bar.
+
+        Uses current screenshot (no re-capture).
         """
-        from core.ocr_finder import find_all_text_on_screen
+        from core.ocr_finder import find_all_text_in_image
+
+        if not self._current_screenshot:
+            print("  [WARNING] No current screenshot, falling back to screen capture")
+            from core.ocr_finder import find_all_text_on_screen
+            if self._monitor_rect:
+                left, top, right, bottom = self._monitor_rect
+                height = bottom - top
+                results_region = (left, top, right - left, int(height * 0.70))
+                matches = find_all_text_on_screen(text, region=results_region, timeout=2.0, hint_pos=hint_pos)
+                result_band = [m for m in matches if m[1] >= 80]
+                return result_band if result_band else matches
+            return find_all_text_on_screen(text, timeout=2.0, hint_pos=hint_pos)
 
         if self._monitor_rect:
             left, top, right, bottom = self._monitor_rect
             height = bottom - top
             results_region = (left, top, right - left, int(height * 0.70))
-            matches = find_all_text_on_screen(
-                text, region=results_region, timeout=2.0, hint_pos=hint_pos
-            )
-            # Drop title-bar matches (y < 80): "Notepad" in window title, not search result
+            matches = find_all_text_in_image(self._current_screenshot, text, hint_pos=hint_pos, region=results_region)
+            # Drop title-bar matches (y < 80)
             result_band = [m for m in matches if m[1] >= 80]
             return result_band if result_band else matches
-        return find_all_text_on_screen(text, timeout=2.0, hint_pos=hint_pos)
+
+        return find_all_text_in_image(self._current_screenshot, text, hint_pos=hint_pos)
 
     def _find_text_in_results_area(
         self, text: str
@@ -1176,7 +1716,7 @@ Answer with just the number, nothing else."""
     def _log_action_execution(self, step: int, action_type: str, target: str, success: bool, details: str = ""):
         """Log detailed action execution results."""
         if self._debug_mode:
-            status = "✓ SUCCESS" if success else "✗ FAILED"
+            status = "[OK] SUCCESS" if success else "✗ FAILED"
             self._log_debug(
                 f"Action: {action_type}\n"
                 f"Target: {target}\n"
