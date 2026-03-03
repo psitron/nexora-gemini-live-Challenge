@@ -86,8 +86,14 @@ class VisionAgent:
                 region_name=self._settings.models.nova_region,
                 model_id=self._settings.models.nova_model_id
             )
+        elif provider == "bedrock":
+            self._vision_model = create_vision_model(
+                "bedrock",
+                region_name=self._settings.models.bedrock_region,
+                model_id=self._settings.models.bedrock_vision_model_id
+            )
         else:
-            raise ValueError(f"Unknown vision provider: {provider}. Set VISION_PROVIDER to 'gemini' or 'nova' in .env")
+            raise ValueError(f"Unknown vision provider: {provider}. Set VISION_PROVIDER to 'gemini', 'nova', or 'bedrock' in .env")
         
         print(f"[Vision Model] Using: {self._vision_model.get_model_name()}")
 

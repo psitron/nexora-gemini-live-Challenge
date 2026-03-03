@@ -54,13 +54,17 @@ class ActionMapper:
         return []
 
     def _try_llm_mapping(self, step: PlannedStep, goal: str) -> List[ActionSpec]:
-        """Use Claude or Gemini to map step → tools."""
+        """Use Claude, Gemini, or Bedrock to map step → tools."""
         # Try Claude first
         actions = self._call_claude_for_mapping(step, goal)
         if actions:
             return actions
         # Try Gemini
         actions = self._call_gemini_for_mapping(step, goal)
+        if actions:
+            return actions
+        # Try Bedrock
+        actions = self._call_bedrock_for_mapping(step, goal)
         if actions:
             return actions
         return []
@@ -117,6 +121,33 @@ class ActionMapper:
             return actions
         except Exception as e:
             print(f"  [ActionMapper] Gemini call failed: {e}")
+            return []
+
+    def _call_bedrock_for_mapping(self, step: PlannedStep, goal: str) -> List[ActionSpec]:
+        """Ask Bedrock (any model via Converse API) to map step to tool calls."""
+        try:
+            from core.bedrock_client import BedrockClient
+        except Exception:
+            return []
+
+        model_id = self._settings.models.bedrock_text_model_id
+        region = self._settings.models.bedrock_region
+        prompt = self._build_mapping_prompt(step, goal)
+
+        try:
+            client = BedrockClient(region_name=region)
+            text = client.converse_text(
+                model_id=model_id,
+                prompt=prompt,
+                max_tokens=1024,
+                temperature=0.1,
+            )
+            actions = self._parse_llm_response(text)
+            if not actions:
+                print(f"  [ActionMapper] Bedrock response couldn't be parsed: {text[:200]}")
+            return actions
+        except Exception as e:
+            print(f"  [ActionMapper] Bedrock call failed: {e}")
             return []
 
     def _build_mapping_prompt(self, step: PlannedStep, goal: str) -> str:

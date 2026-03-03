@@ -54,6 +54,30 @@ class CloudVLMExecutor:
         return text
 
 
+@dataclass
+class BedrockCloudVLMExecutor:
+    """
+    Wrapper around any Bedrock model via the Converse API.
+    """
+
+    region_name: str
+    model_id: str
+
+    def call(self, prompt: str, image_bytes: bytes) -> str:
+        from PIL import Image
+        from core.bedrock_client import BedrockClient
+
+        client = BedrockClient(region_name=self.region_name)
+        img = Image.open(io.BytesIO(image_bytes))
+        return client.converse_with_image(
+            model_id=self.model_id,
+            prompt=prompt,
+            image=img,
+            max_tokens=2048,
+            temperature=0.1,
+        )
+
+
 class Level5CloudVisionExecutor:
     """
     Level 5 executor using Gemini Flash as cloud vision fallback.
@@ -62,9 +86,19 @@ class Level5CloudVisionExecutor:
 
     def __init__(self) -> None:
         settings = get_settings()
-        api_key = settings.models.gemini_api_key or ""
-        model = settings.models.gemini_vision_model
-        self._client = CloudVLMExecutor(api_key=api_key, model=model)
+        provider = settings.models.vision_provider
+
+        if provider == "bedrock":
+            self._client = BedrockCloudVLMExecutor(
+                region_name=settings.models.bedrock_region,
+                model_id=settings.models.bedrock_vision_model_id,
+            )
+        else:
+            # Default to Gemini for both "gemini" and "nova" providers
+            api_key = settings.models.gemini_api_key or ""
+            model = settings.models.gemini_vision_model
+            self._client = CloudVLMExecutor(api_key=api_key, model=model)
+
         self._timing = HumanTiming()
 
     def coordinate_denormalise(self, bbox_str: str, original_size: Tuple[int, int]) -> str:
@@ -94,7 +128,8 @@ class Level5CloudVisionExecutor:
         If perform_click=True, also moves cursor and clicks with human timing.
         """
         settings = get_settings()
-        if not settings.models.gemini_api_key:
+        provider = settings.models.vision_provider
+        if provider != "bedrock" and not settings.models.gemini_api_key:
             return ActionResult(False, "GEMINI_API_KEY not configured; cannot use Level 5 vision.")
 
         prompt = build_grounding_prompt(environment, action_description, element_description)

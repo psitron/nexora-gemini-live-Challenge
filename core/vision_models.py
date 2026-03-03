@@ -217,24 +217,64 @@ class NovaVisionModel(VisionModel):
         return f"nova:{self._model_id}"
 
 
+class BedrockVisionModel(VisionModel):
+    """
+    Generic Bedrock vision model using the Converse API.
+
+    Works with ANY Bedrock model that supports images (Nova, Claude via
+    Bedrock, etc.).  Prefer this over NovaVisionModel for new code.
+    """
+
+    def __init__(self, region_name: str, model_id: str):
+        from core.bedrock_client import BedrockClient
+
+        self._region_name = region_name
+        self._model_id = model_id
+        self._bedrock = BedrockClient(region_name=region_name)
+
+    def generate_content(
+        self,
+        prompt: str,
+        image: Image.Image,
+        max_tokens: int = 2048,
+        temperature: float = 0.1,
+    ) -> VisionModelResponse:
+        """Generate content via Bedrock Converse API."""
+        try:
+            text = self._bedrock.converse_with_image(
+                model_id=self._model_id,
+                prompt=prompt,
+                image=image,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            return VisionModelResponse(text=text, finish_reason=None, raw_response=None)
+        except Exception as e:
+            raise Exception(f"Bedrock API error: {e}")
+
+    def get_model_name(self) -> str:
+        return f"bedrock:{self._model_id}"
+
+
 def create_vision_model(provider: str, **kwargs) -> VisionModel:
     """
     Factory function to create vision model instances.
     Model names and IDs come from kwargs (typically from config/settings).
-    
+
     Args:
-        provider: "gemini" or "nova"
+        provider: "gemini", "nova", or "bedrock"
         **kwargs: Provider-specific arguments
             For Gemini: api_key, model_name (from GEMINI_VISION_MODEL)
             For Nova: region_name (from NOVA_REGION), model_id (from NOVA_MODEL_ID)
-    
+            For Bedrock: region_name (from BEDROCK_REGION), model_id (from BEDROCK_VISION_MODEL_ID)
+
     Returns:
         VisionModel instance
     """
     from config.settings import get_settings
     settings = get_settings()
     provider = provider.lower()
-    
+
     if provider == "gemini":
         return GeminiVisionModel(
             api_key=kwargs.get("api_key") or settings.models.gemini_api_key,
@@ -245,5 +285,10 @@ def create_vision_model(provider: str, **kwargs) -> VisionModel:
             region_name=kwargs.get("region_name") or settings.models.nova_region,
             model_id=kwargs.get("model_id") or settings.models.nova_model_id
         )
+    elif provider == "bedrock":
+        return BedrockVisionModel(
+            region_name=kwargs.get("region_name") or settings.models.bedrock_region,
+            model_id=kwargs.get("model_id") or settings.models.bedrock_vision_model_id
+        )
     else:
-        raise ValueError(f"Unknown vision model provider: {provider}. Supported: 'gemini', 'nova'")
+        raise ValueError(f"Unknown vision model provider: {provider}. Supported: 'gemini', 'nova', 'bedrock'")

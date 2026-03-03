@@ -58,11 +58,12 @@ class CodeAgent:
         self._settings = get_settings()
         self._use_anthropic = bool(self._settings.models.anthropic_api_key)
         self._use_gemini = bool(self._settings.models.gemini_api_key)
+        self._use_bedrock = bool(self._settings.models.bedrock_execution_model_id)
 
-        if not (self._use_anthropic or self._use_gemini):
+        if not (self._use_anthropic or self._use_gemini or self._use_bedrock):
             raise RuntimeError(
                 "[CodeAgent] No API keys configured. "
-                "Set ANTHROPIC_API_KEY or GEMINI_API_KEY in .env"
+                "Set ANTHROPIC_API_KEY, GEMINI_API_KEY, or configure AWS credentials for Bedrock in .env"
             )
 
     def execute_task(self, task_description: str, context: Optional[Dict[str, Any]] = None) -> CodeAgentResult:
@@ -159,7 +160,7 @@ class CodeAgent:
         Returns:
             (code, code_type) or ("", "") if task is complete
         """
-        # Try Anthropic first (better at code generation), then Gemini
+        # Try Anthropic first (better at code generation), then Gemini, then Bedrock
         if self._use_anthropic:
             try:
                 return self._generate_with_claude(task, context, history)
@@ -171,6 +172,12 @@ class CodeAgent:
                 return self._generate_with_gemini(task, context, history)
             except Exception as e:
                 print(f"[CodeAgent] Gemini failed: {e}")
+
+        if self._use_bedrock:
+            try:
+                return self._generate_with_bedrock(task, context, history)
+            except Exception as e:
+                print(f"[CodeAgent] Bedrock failed: {e}")
 
         return ("", "")
 
@@ -260,6 +267,51 @@ Generate the next step:"""
         )
 
         return self._parse_code_response(response.text)
+
+    def _generate_with_bedrock(
+        self,
+        task: str,
+        context: str,
+        history: List[CodeExecutionStep]
+    ) -> tuple[str, str]:
+        """Generate code using Bedrock Converse API."""
+        from core.bedrock_client import BedrockClient
+
+        model_id = self._settings.models.bedrock_execution_model_id
+        region = self._settings.models.bedrock_region
+        client = BedrockClient(region_name=region)
+
+        history_text = self._format_history(history)
+
+        prompt = f"""You are a code generation agent. Your task:
+
+{task}
+
+{context}
+
+Previous steps:
+{history_text if history_text else "None yet - this is the first step."}
+
+Generate Python or Bash code to make progress on this task.
+
+Rules:
+1. If the task is COMPLETE, respond with just: DONE
+2. Otherwise, generate code wrapped in ```python or ```bash
+3. Keep code simple and focused on one sub-task
+4. Add error handling where appropriate
+5. Use absolute paths for file operations
+6. On Windows, use forward slashes in paths
+
+Generate the next step:"""
+
+        text = client.converse_text(
+            model_id=model_id,
+            prompt=prompt,
+            max_tokens=1024,
+            temperature=0.1,
+        )
+
+        return self._parse_code_response(text)
 
     def _format_history(self, history: List[CodeExecutionStep]) -> str:
         """Format execution history for prompt."""

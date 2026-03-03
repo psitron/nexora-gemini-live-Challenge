@@ -39,11 +39,13 @@ class TaskPlanner:
         self._settings = get_settings()
 
     def plan(self, goal: str) -> TaskPlan:
-        # Try Anthropics first, then Gemini, then fallback.
+        # Try Anthropics first, then Gemini, then Bedrock, then fallback.
         steps: List[PlannedStep]
         steps = self._try_claude(goal)
         if not steps:
             steps = self._try_gemini(goal)
+        if not steps:
+            steps = self._try_bedrock(goal)
         if not steps:
             steps = self._fallback_plan(goal)
         return TaskPlan(goal=goal, steps=steps)
@@ -145,6 +147,55 @@ class TaskPlanner:
             return []
 
         raw = (resp.text or "").strip()
+        if not raw:
+            return []
+
+        lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+        steps: List[PlannedStep] = []
+        for idx, line in enumerate(lines, start=1):
+            cleaned = line
+            if cleaned[:2].isdigit() and (cleaned[1:2] in {".", ")"}):
+                cleaned = cleaned[2:].lstrip()
+            elif cleaned[:3].isdigit() and (cleaned[2:3] in {".", ")"}):
+                cleaned = cleaned[3:].lstrip()
+            steps.append(PlannedStep(index=idx, description=cleaned))
+
+        return steps
+
+    def _try_bedrock(self, goal: str) -> List[PlannedStep]:
+        """Plan via Amazon Bedrock Converse API (any Bedrock model)."""
+        try:
+            from core.bedrock_client import BedrockClient
+        except Exception:
+            return []
+
+        model_id = self._settings.models.bedrock_text_model_id
+        region = self._settings.models.bedrock_region
+
+        prompt = (
+            "You are a task planner for a hybrid AI agent that can use browser, "
+            "desktop UI, and filesystem tools.\n\n"
+            "Goal:\n"
+            f"{goal}\n\n"
+            "Return a short numbered list of high-level steps (2–6 items), "
+            "each on its own line, in the format:\n"
+            "1. First step\n"
+            "2. Second step\n"
+            "...\n"
+            "Do not add any extra text before or after the list."
+        )
+
+        try:
+            client = BedrockClient(region_name=region)
+            raw = client.converse_text(
+                model_id=model_id,
+                prompt=prompt,
+                max_tokens=256,
+                temperature=0.3,
+            )
+        except Exception:
+            return []
+
         if not raw:
             return []
 

@@ -20,8 +20,8 @@ from dotenv import load_dotenv
 @dataclass
 class ModelSettings:
     # Vision model configuration
-    vision_provider: str  # "gemini" or "nova"
-    reflection_provider: str  # "gemini", "claude", or "nova"
+    vision_provider: str  # "gemini", "nova", or "bedrock"
+    reflection_provider: str  # "gemini", "claude", "nova", or "bedrock"
 
     # Gemini settings
     gemini_api_key: Optional[str]
@@ -30,6 +30,12 @@ class ModelSettings:
     # Nova (Bedrock) settings
     nova_region: str
     nova_model_id: str
+
+    # Bedrock (generic Converse API) settings
+    bedrock_region: str
+    bedrock_vision_model_id: str
+    bedrock_text_model_id: str
+    bedrock_execution_model_id: str
 
     # Other models (legacy)
     anthropic_api_key: Optional[str]
@@ -114,6 +120,12 @@ def load_settings(dotenv: bool = True) -> Settings:
         # Nova (Bedrock) configuration (region and model ID only defaulted here)
         nova_region=os.getenv("NOVA_REGION", "us-east-1"),
         nova_model_id=os.getenv("NOVA_MODEL_ID", "us.amazon.nova-lite-v1:0"),
+
+        # Bedrock (generic Converse API) configuration
+        bedrock_region=os.getenv("BEDROCK_REGION", "us-east-1"),
+        bedrock_vision_model_id=os.getenv("BEDROCK_VISION_MODEL_ID", "us.amazon.nova-lite-v1:0"),
+        bedrock_text_model_id=os.getenv("BEDROCK_TEXT_MODEL_ID", "us.anthropic.claude-3-5-sonnet-20241022-v2:0"),
+        bedrock_execution_model_id=os.getenv("BEDROCK_EXECUTION_MODEL_ID", "us.anthropic.claude-3-haiku-20240307-v1:0"),
 
         # Other models (legacy)
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),

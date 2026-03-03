@@ -99,6 +99,8 @@ Be concise but specific. Focus on visible changes and actionable feedback."""
                 return self._reflect_with_claude(task_goal, last_action, screenshot_before, screenshot_after)
             elif self._provider == "nova":
                 return self._reflect_with_nova(task_goal, last_action, screenshot_before, screenshot_after)
+            elif self._provider == "bedrock":
+                return self._reflect_with_bedrock(task_goal, last_action, screenshot_before, screenshot_after)
             else:
                 print(f"[ReflectionAgent] Unknown provider '{self._provider}', using basic reflection")
                 return self._basic_reflection(last_action)
@@ -316,6 +318,56 @@ CONFIDENCE: [0.0-1.0]"""
 
         except Exception as e:
             print(f"[ReflectionAgent] Nova API error: {e}")
+            return self._basic_reflection(last_action)
+
+    def _reflect_with_bedrock(
+        self,
+        task_goal: str,
+        last_action: str,
+        screenshot_before: Image.Image,
+        screenshot_after: Image.Image
+    ) -> ReflectionResult:
+        """Reflect using any Bedrock model via the Converse API."""
+        from core.bedrock_client import BedrockClient
+
+        model_id = self._settings.models.bedrock_execution_model_id
+        region = self._settings.models.bedrock_region
+
+        prompt = f"""Task Goal: {task_goal}
+Previous Action: {last_action}
+
+I'm showing you two screenshots: BEFORE and AFTER executing the action.
+
+Analyze:
+1. Did the action succeed? (Look for expected changes)
+2. What specifically changed on screen?
+3. Are we closer to the goal? (progressing/stuck/completed/regressed)
+4. What should we do next?
+
+Respond in this format:
+SUCCESS: yes/no
+STATE_CHANGED: yes/no
+PROGRESS: progressing/stuck/completed/regressed
+OBSERVATIONS: [What changed]
+NEXT_ACTION: [Specific guidance]
+CONFIDENCE: [0.0-1.0]"""
+
+        try:
+            client = BedrockClient(region_name=region)
+            text = client.converse_with_images(
+                model_id=model_id,
+                prompt=prompt,
+                images=[
+                    ("BEFORE screenshot:", screenshot_before),
+                    ("AFTER screenshot:", screenshot_after),
+                ],
+                max_tokens=512,
+                temperature=0.1,
+            )
+            return self._parse_reflection_response(text, last_action)
+
+        except Exception as e:
+            print(f"[ReflectionAgent] Bedrock API error: {e}")
             return self._basic_reflection(last_action)
 
     def _parse_reflection_response(self, text: str, last_action: str) -> ReflectionResult:
