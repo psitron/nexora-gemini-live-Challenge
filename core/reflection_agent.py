@@ -73,7 +73,9 @@ Be concise but specific. Focus on visible changes and actionable feedback."""
         task_goal: str,
         last_action: str,
         screenshot_before: Optional[Image.Image],
-        screenshot_after: Optional[Image.Image]
+        screenshot_after: Optional[Image.Image],
+        execution_result: bool = True,
+        execution_message: str = ""
     ) -> ReflectionResult:
         """
         Reflect on the last action by comparing before/after states.
@@ -83,35 +85,59 @@ Be concise but specific. Focus on visible changes and actionable feedback."""
             last_action: Description of the action that was taken
             screenshot_before: Screenshot before the action
             screenshot_after: Screenshot after the action
+            execution_result: Whether the action execution succeeded (NEW)
+            execution_message: Error message if execution failed (NEW)
 
         Returns:
             ReflectionResult with analysis and guidance
         """
+        # CRITICAL FIX: If execution failed, immediately return failure reflection
+        if not execution_result:
+            return ReflectionResult(
+                action_succeeded=False,
+                state_changed=False,
+                progress_assessment="stuck",
+                observations=f"Action failed: {execution_message}",
+                next_action_guidance="Try a different approach or method",
+                confidence=1.0  # We KNOW it failed
+            )
+
         # If no screenshots available, return basic reflection
         if screenshot_before is None or screenshot_after is None:
-            return self._basic_reflection(last_action)
+            return self._basic_reflection(last_action, execution_result)
 
         # Use configured provider
         try:
             if self._provider == "gemini":
-                return self._reflect_with_gemini(task_goal, last_action, screenshot_before, screenshot_after)
+                return self._reflect_with_gemini(task_goal, last_action, screenshot_before, screenshot_after, execution_result, execution_message)
             elif self._provider == "claude":
-                return self._reflect_with_claude(task_goal, last_action, screenshot_before, screenshot_after)
+                return self._reflect_with_claude(task_goal, last_action, screenshot_before, screenshot_after, execution_result, execution_message)
             elif self._provider == "nova":
-                return self._reflect_with_nova(task_goal, last_action, screenshot_before, screenshot_after)
+                return self._reflect_with_nova(task_goal, last_action, screenshot_before, screenshot_after, execution_result, execution_message)
             elif self._provider == "bedrock":
-                return self._reflect_with_bedrock(task_goal, last_action, screenshot_before, screenshot_after)
+                return self._reflect_with_bedrock(task_goal, last_action, screenshot_before, screenshot_after, execution_result, execution_message)
             else:
                 print(f"[ReflectionAgent] Unknown provider '{self._provider}', using basic reflection")
-                return self._basic_reflection(last_action)
+                return self._basic_reflection(last_action, execution_result)
         except Exception as e:
             print(f"[ReflectionAgent] {self._provider} failed: {e}")
-            return self._basic_reflection(last_action)
+            return self._basic_reflection(last_action, execution_result)
 
-    def _basic_reflection(self, last_action: str) -> ReflectionResult:
+    def _basic_reflection(self, last_action: str, execution_result: bool = True) -> ReflectionResult:
         """Fallback reflection when no LLM is available."""
+        # CRITICAL FIX: Don't always assume success
+        if not execution_result:
+            return ReflectionResult(
+                action_succeeded=False,
+                state_changed=False,
+                progress_assessment="stuck",
+                observations=f"Action failed: {last_action}",
+                next_action_guidance="Try a different approach.",
+                confidence=0.8
+            )
+
         return ReflectionResult(
-            action_succeeded=True,  # Assume success
+            action_succeeded=True,
             state_changed=True,
             progress_assessment="progressing",
             observations=f"Executed: {last_action}",
@@ -124,7 +150,9 @@ Be concise but specific. Focus on visible changes and actionable feedback."""
         task_goal: str,
         last_action: str,
         screenshot_before: Image.Image,
-        screenshot_after: Image.Image
+        screenshot_after: Image.Image,
+        execution_result: bool = True,
+        execution_message: str = ""
     ) -> ReflectionResult:
         """Reflect using Claude (Anthropic)."""
         import anthropic
@@ -143,16 +171,24 @@ Be concise but specific. Focus on visible changes and actionable feedback."""
         before_b64 = image_to_base64(screenshot_before)
         after_b64 = image_to_base64(screenshot_after)
 
+        exec_status = "SUCCESS" if execution_result else "FAILED"
+        exec_info = f"\n**Execution Status:** {exec_status}"
+        if not execution_result and execution_message:
+            exec_info += f"\n**Error Message:** {execution_message}"
+
         prompt = f"""Task Goal: {task_goal}
 Previous Action: {last_action}
+{exec_info}
 
 Compare these two screenshots (BEFORE and AFTER the action).
 
 Analyze:
-1. Did the action succeed? (Look for expected changes)
+1. Did the action succeed? (Execution says: {exec_status})
 2. What specifically changed on screen?
 3. Are we closer to the goal? (progressing/stuck/completed/regressed)
 4. What should we do next?
+
+IMPORTANT: If execution failed, focus on WHY it failed and suggest alternatives.
 
 Respond in this format:
 SUCCESS: yes/no
@@ -191,7 +227,9 @@ CONFIDENCE: [0.0-1.0]"""
         task_goal: str,
         last_action: str,
         screenshot_before: Image.Image,
-        screenshot_after: Image.Image
+        screenshot_after: Image.Image,
+        execution_result: bool = True,
+        execution_message: str = ""
     ) -> ReflectionResult:
         """Reflect using Gemini."""
         import google.generativeai as genai
@@ -199,16 +237,25 @@ CONFIDENCE: [0.0-1.0]"""
         genai.configure(api_key=self._settings.models.gemini_api_key)
         model = genai.GenerativeModel(self._settings.models.gemini_vision_model)
 
+        # NEW: Include execution result in prompt
+        exec_status = "SUCCESS" if execution_result else "FAILED"
+        exec_info = f"\n**Execution Status:** {exec_status}"
+        if not execution_result and execution_message:
+            exec_info += f"\n**Error Message:** {execution_message}"
+
         prompt = f"""Task Goal: {task_goal}
 Previous Action: {last_action}
+{exec_info}
 
 I'm showing you two screenshots: BEFORE and AFTER executing the action.
 
 Analyze:
-1. Did the action succeed? (Look for expected changes)
+1. Did the action succeed? (Execution says: {exec_status})
 2. What specifically changed on screen?
 3. Are we closer to the goal? (progressing/stuck/completed/regressed)
 4. What should we do next?
+
+IMPORTANT: If execution failed, focus on WHY it failed and suggest alternatives.
 
 Respond in this format:
 SUCCESS: yes/no
@@ -228,14 +275,16 @@ CONFIDENCE: [0.0-1.0]"""
 
         except Exception as e:
             print(f"[ReflectionAgent] Gemini API error: {e}")
-            return self._basic_reflection(last_action)
+            return self._basic_reflection(last_action, execution_result)
 
     def _reflect_with_nova(
         self,
         task_goal: str,
         last_action: str,
         screenshot_before: Image.Image,
-        screenshot_after: Image.Image
+        screenshot_after: Image.Image,
+        execution_result: bool = True,
+        execution_message: str = ""
     ) -> ReflectionResult:
         """Reflect using Amazon Nova."""
         import boto3
@@ -264,16 +313,25 @@ CONFIDENCE: [0.0-1.0]"""
         before_b64 = image_to_base64(screenshot_before)
         after_b64 = image_to_base64(screenshot_after)
 
+        # Include execution result in prompt
+        exec_status = "SUCCESS" if execution_result else "FAILED"
+        exec_info = f"\n**Execution Status:** {exec_status}"
+        if not execution_result and execution_message:
+            exec_info += f"\n**Error Message:** {execution_message}"
+
         prompt = f"""Task Goal: {task_goal}
 Previous Action: {last_action}
 
 I'm showing you two screenshots: BEFORE and AFTER executing the action.
+{exec_info}
 
 Analyze:
-1. Did the action succeed? (Look for expected changes)
+1. Did the action succeed? (Execution says: {exec_status})
 2. What specifically changed on screen?
 3. Are we closer to the goal? (progressing/stuck/completed/regressed)
 4. What should we do next?
+
+IMPORTANT: If execution failed, focus on WHY it failed and suggest alternatives.
 
 Respond in this format:
 SUCCESS: yes/no
@@ -318,14 +376,16 @@ CONFIDENCE: [0.0-1.0]"""
 
         except Exception as e:
             print(f"[ReflectionAgent] Nova API error: {e}")
-            return self._basic_reflection(last_action)
+            return self._basic_reflection(last_action, execution_result)
 
     def _reflect_with_bedrock(
         self,
         task_goal: str,
         last_action: str,
         screenshot_before: Image.Image,
-        screenshot_after: Image.Image
+        screenshot_after: Image.Image,
+        execution_result: bool = True,
+        execution_message: str = ""
     ) -> ReflectionResult:
         """Reflect using any Bedrock model via the Converse API."""
         from core.bedrock_client import BedrockClient
@@ -333,16 +393,25 @@ CONFIDENCE: [0.0-1.0]"""
         model_id = self._settings.models.bedrock_execution_model_id
         region = self._settings.models.bedrock_region
 
+        # NEW: Include execution result in prompt
+        exec_status = "SUCCESS" if execution_result else "FAILED"
+        exec_info = f"\n**Execution Status:** {exec_status}"
+        if not execution_result and execution_message:
+            exec_info += f"\n**Error Message:** {execution_message}"
+
         prompt = f"""Task Goal: {task_goal}
 Previous Action: {last_action}
+{exec_info}
 
 I'm showing you two screenshots: BEFORE and AFTER executing the action.
 
 Analyze:
-1. Did the action succeed? (Look for expected changes)
+1. Did the action succeed? (Execution says: {exec_status})
 2. What specifically changed on screen?
 3. Are we closer to the goal? (progressing/stuck/completed/regressed)
 4. What should we do next?
+
+IMPORTANT: If execution failed, focus on WHY it failed and suggest alternatives.
 
 Respond in this format:
 SUCCESS: yes/no

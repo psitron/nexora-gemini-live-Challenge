@@ -216,10 +216,22 @@ class VisionAgent:
             consecutive_failures = 0
 
             # Scale hint coordinates from resized image to screen coordinates
+            # (Agent S3 pattern: log full coordinate transformation trace)
             if action.hint_x >= 0 and action.hint_y >= 0:
+                raw_hx, raw_hy = action.hint_x, action.hint_y
                 action.hint_x, action.hint_y = self._scale_hint_to_screen(
                     action.hint_x, action.hint_y
                 )
+                if self._debug_mode:
+                    self._log_debug(
+                        f"COORDINATE TRANSFORMATION:\n"
+                        f"  AI image coords: ({raw_hx}, {raw_hy}) in {small_screenshot.size[0]}x{small_screenshot.size[1]}\n"
+                        f"  Scale factor: {self._scale:.4f}x\n"
+                        f"  Monitor offset: {self._monitor_offset}\n"
+                        f"  Screen coords: ({action.hint_x}, {action.hint_y})\n"
+                        f"  Calc: x={raw_hx}*{self._scale:.2f}+{self._monitor_offset[0]}={action.hint_x}  "
+                        f"y={raw_hy}*{self._scale:.2f}+{self._monitor_offset[1]}={action.hint_y}"
+                    )
 
             print(f"Step {steps}: {action.action_type} -> {action.description}")
             if action.hint_x >= 0:
@@ -294,21 +306,40 @@ class VisionAgent:
                     section=f"Step {steps} - EXECUTING ACTION"
                 )
             
+            exec_start = time.time()
             success = self._execute_action(action)
-            
+            exec_duration = time.time() - exec_start
+
             # Build last_action_summary for next step's self-assessment
             status_word = "succeeded" if success else "FAILED"
             last_action_summary = f"{action.action_type}({action.target}) - {status_word}. {action.description}"
-            
+
             if self._debug_mode:
                 status = "[OK] SUCCESS" if success else "[X] FAILED"
                 self._log_debug(
-                    f"Result: {status}\n"
-                    f"Action: {action.action_type}({action.target})"
+                    f"EXECUTION RESULT:\n"
+                    f"  Status: {status}\n"
+                    f"  Action: {action.action_type}({action.target})\n"
+                    f"  Duration: {exec_duration:.2f}s\n"
+                    f"  Step: {steps}/{self.MAX_STEPS}\n"
+                    f"  Actions so far: {len(previous_actions)}",
+                    section=f"Step {steps} - RESULT"
                 )
-            
+
             if not success:
-                print(f"  Action failed, will retry")
+                print(f"  [X] Action FAILED: {action.action_type}({action.target[:50]})")
+                consecutive_failures += 1
+                if consecutive_failures >= 5:
+                    print(f"  [ABORT] Too many consecutive failures ({consecutive_failures})")
+                    if self._debug_mode:
+                        self._log_debug(
+                            f"Task Aborted: Too many execution failures\n"
+                            f"Consecutive Failures: {consecutive_failures}",
+                            section="TASK ABORTED"
+                        )
+                    return VisionAgentResult(False, steps, f"Too many failures ({consecutive_failures})")
+            else:
+                consecutive_failures = 0
 
             if action.action_type == "wait":
                 time.sleep(2)
@@ -419,6 +450,11 @@ RULES:
    - Tab = Move to next cell/field
    - Enter = Confirm/submit
    If clicking a button fails, ALWAYS try the keyboard shortcut next.
+10. JUPYTER NOTEBOOK WORKFLOW (if goal mentions "notebook" or "jupyter"):
+   - After launching Jupyter, you see a FILE BROWSER (not a notebook yet!)
+   - To create NEW notebook: Click "New" button (top right) -> Click "Python 3" from dropdown
+   - Do NOT try to click "Untitled.ipynb" before creating it!
+   - Only click existing .ipynb files if they're already listed in the browser
 
 JSON only:"""
 
@@ -480,13 +516,29 @@ JSON only:"""
                             self._log_debug(f"Step {step_num} - BLOCKED: click_text contains pattern '{pattern}'")
                         return None  # Force AI to retry with a different action
 
+            # CRITICAL FIX: Validate and clamp hint coordinates to image bounds
+            hint_x = int(data.get("hint_x", -1))
+            hint_y = int(data.get("hint_y", -1))
+
+            # Validate coordinates are within the image bounds that AI analyzed
+            if hint_x >= 0 and hint_y >= 0:
+                if hint_x >= img_w or hint_y >= img_h:
+                    print(f"  [WARNING] AI gave coordinates ({hint_x},{hint_y}) outside image bounds ({img_w}x{img_h})")
+                    print(f"  [WARNING] This usually means AI is confused about image size")
+                    # Clamp to valid range
+                    hint_x = max(0, min(hint_x, img_w - 1))
+                    hint_y = max(0, min(hint_y, img_h - 1))
+                    print(f"  [WARNING] Clamped to ({hint_x},{hint_y})")
+                    if self._debug_mode:
+                        self._log_debug(f"Step {step_num} - COORDINATE CLAMPED: ({data.get('hint_x')},{data.get('hint_y')}) -> ({hint_x},{hint_y})")
+
             return VisionAction(
                 action_type=action_type,
                 target=data.get("target", ""),
                 description=data.get("description", ""),
                 highlight_text=data.get("highlight_text", ""),
-                hint_x=int(data.get("hint_x", -1)),
-                hint_y=int(data.get("hint_y", -1)),
+                hint_x=hint_x,
+                hint_y=hint_y,
             )
 
         except KeyboardInterrupt:
@@ -647,25 +699,56 @@ JSON only:"""
     # ---- run_command ----
 
     def _do_run_command(self, action: VisionAction) -> bool:
-        """Run a shell command via Win+R (Run dialog). Visible with annotations for training."""
+        """Run a shell command via Win+R (Run dialog), OR type into open terminal.
+
+        CRITICAL FIX: Detects if a terminal window is already active and types
+        directly into it instead of opening Win+R.
+        """
         import pyautogui
         from core.visual_annotator_adapter import highlight_bbox
-        
+
         command = action.target
         print(f"  Running command: {command}")
-        
+
         if self._debug_mode:
             self._log_debug(
                 f"Action: run_command\n"
                 f"Command: {command}",
                 section="ACTION: run_command"
             )
-        
+
+        # CRITICAL FIX: Check if we're already in a terminal window
+        try:
+            import pygetwindow as gw
+            active_window = gw.getActiveWindow()
+            if active_window:
+                title = active_window.title.lower()
+                terminal_keywords = ["prompt", "powershell", "terminal", "bash", "cmd", "anaconda"]
+                if any(term in title for term in terminal_keywords):
+                    print(f"  [DETECTED] Terminal window already active: '{active_window.title}'")
+                    print(f"  [TYPING] Typing command into terminal instead of opening Win+R")
+
+                    # Type directly into the terminal
+                    for char in command:
+                        pyautogui.write(char, interval=0)
+                        time.sleep(0.03)
+
+                    time.sleep(0.3)
+                    pyautogui.press('enter')
+                    time.sleep(1.5)
+                    return True
+        except Exception as e:
+            print(f"  [WARNING] Could not detect active window: {e}")
+            # Fall through to Win+R method
+
+        # Original Win+R method for standalone commands
+        print(f"  [INFO] No terminal detected, using Win+R dialog")
+
         # Annotate the taskbar area to show we're using Win+R
         taskbar_bbox = self._find_taskbar_search_bbox()
         if taskbar_bbox:
             highlight_bbox(taskbar_bbox, duration=0.6, fade_out_seconds=0.8)
-        
+
         # Open Run dialog
         pyautogui.hotkey("win", "r")
         time.sleep(1.0)
@@ -736,7 +819,12 @@ JSON only:"""
             hint_pos=hint
         )
 
-        if bbox:
+        # CRITICAL FIX: Properly handle vision detection failure
+        if bbox is None:
+            print(f"  [FAILED] Vision detection returned None for '{text}'")
+            print(f"  [FALLBACK] Trying OCR detection...")
+            # Fall through to OCR fallback below
+        elif bbox:
             x, y, w, h = bbox
             print(f"  [OK] Vision found '{text}' at ({x},{y}) size {w}x{h}")
 
@@ -760,21 +848,71 @@ JSON only:"""
             return True
 
         # Fallback: Try OCR (may still work for simple text)
-        print(f"  Vision detection failed, trying OCR fallback...")
+        if bbox is None:
+            print(f"  Vision detection failed, trying OCR fallback...")
         all_matches = self._find_all_text_matches(text, hint_pos=hint)
 
         if not all_matches:
             # Last resort: AI hint coordinates (least accurate)
+            # BUT ONLY if coordinates are reasonable (not far outside screen)
             if action.hint_x >= 0 and action.hint_y >= 0:
-                print(f"  OCR also failed, using AI hint ({action.hint_x},{action.hint_y})")
-                pad = 15
-                highlight_bbox(
-                    f"{action.hint_x-pad},{action.hint_y-pad},{pad*2},{pad*2}",
-                    duration=0.6, fade_out_seconds=0.8,
-                )
-                self._smooth_click(action.hint_x, action.hint_y)
-                return True
-            print(f"  [X] '{text}' not found by any method")
+                # Validate hint coordinates are within reasonable bounds
+                if (action.hint_x < self._monitor_rect[2] + 100 and
+                    action.hint_y < self._monitor_rect[3] + 100):
+                    print(f"  OCR also failed, using AI hint ({action.hint_x},{action.hint_y})")
+                    pad = 15
+                    highlight_bbox(
+                        f"{action.hint_x-pad},{action.hint_y-pad},{pad*2},{pad*2}",
+                        duration=0.6, fade_out_seconds=0.8,
+                    )
+                    self._smooth_click(action.hint_x, action.hint_y)
+                    return True
+                else:
+                    print(f"  [X] AI hint coordinates ({action.hint_x},{action.hint_y}) outside valid screen bounds")
+
+            # LAST RESORT: Keyboard fallback for common dropdown patterns
+            # CRITICAL: We try keyboard actions but return False because we can't verify success
+            text_lower = text.lower()
+            print(f"  [FALLBACK] All detection methods failed. Trying keyboard as last resort...")
+
+            # Common dropdown patterns (Jupyter, VS Code, etc.)
+            if "python 3" in text_lower or "python3" in text_lower:
+                print(f"  [KEYBOARD] Attempting Down+Enter for Python 3 dropdown")
+                print(f"  [WARNING] Cannot verify if dropdown is open - this may fail")
+                import pyautogui
+                time.sleep(0.3)
+                pyautogui.press('down')  # Navigate to Python 3 (IF dropdown is open)
+                time.sleep(0.3)
+                pyautogui.press('enter')
+                time.sleep(0.5)
+                print(f"  [X] Keyboard action attempted but SUCCESS UNCERTAIN - returning False")
+                return False  # HONEST: We don't know if it worked
+
+            elif "notebook" in text_lower and "new" in action.description.lower():
+                print(f"  [KEYBOARD] Attempting Down+Enter for new notebook")
+                print(f"  [WARNING] Cannot verify if dropdown is open - this may fail")
+                import pyautogui
+                time.sleep(0.3)
+                pyautogui.press('down')
+                time.sleep(0.3)
+                pyautogui.press('enter')
+                time.sleep(0.5)
+                print(f"  [X] Keyboard action attempted but SUCCESS UNCERTAIN - returning False")
+                return False  # HONEST: We don't know if it worked
+
+            elif any(keyword in text_lower for keyword in ["file", "folder", "text file"]):
+                print(f"  [KEYBOARD] Attempting Down+Enter for file/folder dropdown")
+                print(f"  [WARNING] Cannot verify if dropdown is open - this may fail")
+                import pyautogui
+                time.sleep(0.3)
+                pyautogui.press('down')
+                time.sleep(0.2)
+                pyautogui.press('enter')
+                time.sleep(0.5)
+                print(f"  [X] Keyboard action attempted but SUCCESS UNCERTAIN - returning False")
+                return False  # HONEST: We don't know if it worked
+
+            print(f"  [X] FAILED: '{text}' not found by any method (vision, OCR, hint, or keyboard)")
             return False
 
         # If OCR found matches, use them
@@ -1018,15 +1156,79 @@ JSON only:"""
 
         return find_all_text_in_image(self._current_screenshot, text, hint_pos=hint_pos, region=region)
 
+    def _validate_bbox_in_image(
+        self, bx: int, by: int, bw: int, bh: int, img_w: int, img_h: int, label: str = ""
+    ) -> Optional[Tuple[int, int, int, int]]:
+        """Validate and sanitize a bounding box against image dimensions.
+
+        Applies Agent-S3-style coordinate clamping and sanity checks:
+        - Rejects explicit "not found" (-1, -1)
+        - Rejects full-screen boxes (area > 50% of image)
+        - Clamps coordinates that exceed image bounds
+        - Rejects boxes that are impossibly large or small
+
+        Returns sanitized (bx, by, bw, bh) or None if invalid.
+        """
+        prefix = f"  [BBOX-VALIDATE{' ' + label if label else ''}]"
+
+        # Check explicit "not found" signal
+        if bx < 0 or by < 0:
+            print(f"{prefix} REJECTED: negative coords ({bx},{by}) = 'not found'")
+            if self._debug_mode:
+                self._log_debug(f"BBOX REJECTED (not found): ({bx},{by},{bw},{bh})")
+            return None
+
+        if bw <= 0 or bh <= 0:
+            print(f"{prefix} REJECTED: zero/negative size w={bw}, h={bh}")
+            if self._debug_mode:
+                self._log_debug(f"BBOX REJECTED (zero size): ({bx},{by},{bw},{bh})")
+            return None
+
+        # Check if coordinates are wildly outside image bounds (vision confused about space)
+        if bx >= img_w * 1.5 or by >= img_h * 1.5:
+            print(f"{prefix} REJECTED: coords ({bx},{by}) far outside image ({img_w}x{img_h})")
+            if self._debug_mode:
+                self._log_debug(f"BBOX REJECTED (out of image): ({bx},{by},{bw},{bh}) vs image {img_w}x{img_h}")
+            return None
+
+        # Clamp coordinates to image bounds (Agent S3 pattern)
+        orig_bx, orig_by = bx, by
+        bx = max(0, min(bx, img_w - 1))
+        by = max(0, min(by, img_h - 1))
+        bw = max(1, min(bw, img_w - bx))
+        bh = max(1, min(bh, img_h - by))
+        if bx != orig_bx or by != orig_by:
+            print(f"{prefix} CLAMPED: ({orig_bx},{orig_by}) -> ({bx},{by})")
+
+        # Reject full-screen / oversized boxes (vision couldn't pinpoint element)
+        bbox_area = bw * bh
+        img_area = img_w * img_h
+        area_ratio = bbox_area / img_area if img_area > 0 else 1.0
+
+        if area_ratio > 0.50:
+            print(f"{prefix} REJECTED: bbox covers {area_ratio:.0%} of image (full-screen detection failure)")
+            if self._debug_mode:
+                self._log_debug(f"BBOX REJECTED (full-screen): ({bx},{by},{bw},{bh}) area_ratio={area_ratio:.2%}")
+            return None
+
+        # Reject impossibly small boxes (< 3px in any dimension)
+        if bw < 3 or bh < 3:
+            print(f"{prefix} REJECTED: too small ({bw}x{bh})")
+            return None
+
+        print(f"{prefix} VALID: ({bx},{by},{bw},{bh}) area={area_ratio:.1%} of image")
+        return (bx, by, bw, bh)
+
     def _find_element_with_vision(
         self, element_description: str, hint_pos: Tuple[int, int] = None
     ) -> Optional[Tuple[int, int, int, int]]:
         """
         Use vision model to find a UI element by asking for its bounding box directly.
 
-        Two-pass approach:
+        Two-pass approach (following Agent S3 patterns):
         1. Ask vision model for precise bounding box of the element
         2. If that fails and hint_pos provided, ask vision model to refine the hint
+        3. Validate all coordinates at every stage
 
         Args:
             element_description: What to find (e.g., "Blank workbook button")
@@ -1045,11 +1247,23 @@ JSON only:"""
         resized = self._resize_screenshot(self._current_screenshot.copy())
         r_w, r_h = resized.size
 
+        if self._debug_mode:
+            self._log_debug(
+                f"Vision Element Detection\n"
+                f"  Target: {element_description}\n"
+                f"  Original image: {img_w}x{img_h}\n"
+                f"  Resized image: {r_w}x{r_h}\n"
+                f"  Scale factor: {self._scale:.4f}x\n"
+                f"  Monitor offset: {self._monitor_offset}\n"
+                f"  Hint position: {hint_pos}",
+                section="VISION DETECTION START"
+            )
+
         # Pass 1: Ask vision model for bounding box directly
-        # Use a simple format to minimize truncation risk
         prompt = f"""Look at this {r_w}x{r_h} screenshot. Find: "{element_description}"
 
 Return bounding box as: {{"x":LEFT,"y":TOP,"w":WIDTH,"h":HEIGHT}}
+Coordinates MUST be within 0-{r_w} for x/w and 0-{r_h} for y/h.
 If not visible: {{"x":-1,"y":-1,"w":0,"h":0}}
 ONLY output the JSON object, no other text."""
 
@@ -1075,12 +1289,28 @@ ONLY output the JSON object, no other text."""
 
             if bbox:
                 bx, by, bw, bh = bbox
-                if bx >= 0 and by >= 0 and bw > 0 and bh > 0:
+
+                # CRITICAL: Validate bbox against resized image dimensions
+                validated = self._validate_bbox_in_image(bx, by, bw, bh, r_w, r_h, label="Pass1")
+
+                if validated:
+                    bx, by, bw, bh = validated
                     # Scale from resized image to screen coordinates
                     sx = int(bx * self._scale) + self._monitor_offset[0]
                     sy = int(by * self._scale) + self._monitor_offset[1]
                     sw = int(bw * self._scale)
                     sh = int(bh * self._scale)
+
+                    if self._debug_mode:
+                        self._log_debug(
+                            f"Coordinate Transformation:\n"
+                            f"  Image coords: ({bx},{by},{bw},{bh})\n"
+                            f"  Scale: {self._scale:.4f}x | Offset: {self._monitor_offset}\n"
+                            f"  Screen coords: ({sx},{sy},{sw},{sh})\n"
+                            f"  Calc: sx={bx}*{self._scale:.2f}+{self._monitor_offset[0]}={sx}  "
+                            f"sy={by}*{self._scale:.2f}+{self._monitor_offset[1]}={sy}"
+                        )
+
                     print(f"  [OK] Vision found element at ({sx},{sy}) size {sw}x{sh}")
 
                     # Save debug image
@@ -1094,10 +1324,15 @@ ONLY output the JSON object, no other text."""
 
                     return (sx, sy, sw, sh)
                 else:
-                    print(f"  [INFO] Vision model says element not found (returned -1)")
+                    print(f"  [INFO] Vision bbox rejected by validation")
+            else:
+                print(f"  [INFO] Vision model says element not found (returned -1 or unparseable)")
 
         except Exception as e:
             print(f"  [ERROR] Vision element detection failed: {e}")
+            if self._debug_mode:
+                import traceback
+                self._log_debug(f"Vision detection exception:\n{traceback.format_exc()}")
 
         # Pass 2: If hint available, ask vision model to refine the hint area
         if hint_pos and hint_pos[0] >= 0 and hint_pos[1] >= 0:
@@ -1106,6 +1341,10 @@ ONLY output the JSON object, no other text."""
             # Convert hint from screen coords to resized image coords
             hint_img_x = int((hint_pos[0] - self._monitor_offset[0]) / self._scale)
             hint_img_y = int((hint_pos[1] - self._monitor_offset[1]) / self._scale)
+
+            # Clamp hint to image bounds (Agent S3 pattern)
+            hint_img_x = max(0, min(hint_img_x, r_w - 1))
+            hint_img_y = max(0, min(hint_img_y, r_h - 1))
 
             # Crop a region around the hint for focused analysis
             crop_size = 200  # pixels in resized image
@@ -1117,10 +1356,20 @@ ONLY output the JSON object, no other text."""
             cropped = resized.crop((crop_left, crop_top, crop_right, crop_bottom))
             c_w, c_h = cropped.size
 
+            if self._debug_mode:
+                self._log_debug(
+                    f"Hint Refinement Pass 2:\n"
+                    f"  Screen hint: {hint_pos}\n"
+                    f"  Image hint: ({hint_img_x},{hint_img_y})\n"
+                    f"  Crop region: ({crop_left},{crop_top})-({crop_right},{crop_bottom})\n"
+                    f"  Crop size: {c_w}x{c_h}"
+                )
+
             refine_prompt = f"""This is a {c_w}x{c_h} cropped screenshot. Find: "{element_description}"
 
 Return bounding box as: {{"x":LEFT,"y":TOP,"w":WIDTH,"h":HEIGHT}}
-Coordinates relative to this crop. If not visible: {{"x":-1,"y":-1,"w":0,"h":0}}
+Coordinates MUST be within 0-{c_w} for x/w and 0-{c_h} for y/h.
+If not visible: {{"x":-1,"y":-1,"w":0,"h":0}}
 ONLY output the JSON object."""
 
             try:
@@ -1136,23 +1385,34 @@ ONLY output the JSON object."""
 
                 if bbox2:
                     bx, by, bw, bh = bbox2
-                    if bx >= 0 and by >= 0 and bw > 0 and bh > 0:
+
+                    # Validate bbox against CROP dimensions
+                    validated2 = self._validate_bbox_in_image(bx, by, bw, bh, c_w, c_h, label="Pass2-Crop")
+
+                    if validated2:
+                        bx, by, bw, bh = validated2
                         # Map from crop coords to screen coords
                         sx = int((bx + crop_left) * self._scale) + self._monitor_offset[0]
                         sy = int((by + crop_top) * self._scale) + self._monitor_offset[1]
                         sw = int(bw * self._scale)
                         sh = int(bh * self._scale)
                         print(f"  [OK] Vision refined hint to ({sx},{sy}) size {sw}x{sh}")
+
+                        if self._debug_mode:
+                            self._log_debug(
+                                f"Pass 2 Success:\n"
+                                f"  Crop coords: ({bx},{by},{bw},{bh})\n"
+                                f"  Screen coords: ({sx},{sy},{sw},{sh})"
+                            )
                         return (sx, sy, sw, sh)
 
             except Exception as e:
                 print(f"  [ERROR] Hint refinement failed: {e}")
 
-            # Last resort: create a small box around the hint position
-            print(f"  [INFO] Using raw hint position as last resort")
-            w, h = 60, 40
-            return (max(0, hint_pos[0] - w // 2), max(0, hint_pos[1] - h // 2), w, h)
-
+        # All passes failed - return None (do NOT fabricate a box around hint)
+        print(f"  [FAILED] Vision could not find '{element_description}' in any pass")
+        if self._debug_mode:
+            self._log_debug(f"Vision Detection FAILED for: {element_description}")
         return None
 
     def _parse_bbox_response(self, response_text: str) -> Optional[Tuple[int, int, int, int]]:
@@ -1163,6 +1423,9 @@ ONLY output the JSON object."""
         2. Partial/truncated JSON: {"x": 148, "y": 339
         3. Comma-separated: 148, 339, 100, 60
         4. Space-separated: 148 339 100 60
+
+        NOTE: Validation against image bounds is done by _validate_bbox_in_image().
+        This method only parses; the caller validates.
         """
         import json
         import re
@@ -1174,6 +1437,8 @@ ONLY output the JSON object."""
         text = re.sub(r'```\s*', '', text)
         text = text.strip()
 
+        result = None
+
         # Strategy 1: Try complete JSON
         match = re.search(r'\{[^}]*\}', text, re.DOTALL)
         if match:
@@ -1183,37 +1448,39 @@ ONLY output the JSON object."""
                 y = int(data.get('y', -1))
                 w = int(data.get('w', 0))
                 h = int(data.get('h', 0))
-                return (x, y, w, h)
+                result = (x, y, w, h)
             except (json.JSONDecodeError, ValueError, KeyError):
                 pass
 
         # Strategy 2: Extract named values from partial JSON (handles truncated responses)
-        x_match = re.search(r'"x"\s*:\s*(-?\d+)', text)
-        y_match = re.search(r'"y"\s*:\s*(-?\d+)', text)
-        w_match = re.search(r'"w"\s*:\s*(-?\d+)', text)
-        h_match = re.search(r'"h"\s*:\s*(-?\d+)', text)
+        if result is None:
+            x_match = re.search(r'"x"\s*:\s*(-?\d+)', text)
+            y_match = re.search(r'"y"\s*:\s*(-?\d+)', text)
+            w_match = re.search(r'"w"\s*:\s*(-?\d+)', text)
+            h_match = re.search(r'"h"\s*:\s*(-?\d+)', text)
 
-        if x_match and y_match:
-            x = int(x_match.group(1))
-            y = int(y_match.group(1))
-            w = int(w_match.group(1)) if w_match else 80  # default size
-            h = int(h_match.group(1)) if h_match else 50
-            print(f"  [INFO] Extracted from partial JSON: x={x}, y={y}, w={w}, h={h}")
-            return (x, y, w, h)
+            if x_match and y_match:
+                x = int(x_match.group(1))
+                y = int(y_match.group(1))
+                w = int(w_match.group(1)) if w_match else 80  # default size
+                h = int(h_match.group(1)) if h_match else 50
+                result = (x, y, w, h)
 
         # Strategy 3: Look for 4 comma-separated or space-separated numbers
-        nums = re.findall(r'-?\d+', text)
-        if len(nums) >= 4:
-            x, y, w, h = int(nums[0]), int(nums[1]), int(nums[2]), int(nums[3])
-            print(f"  [INFO] Extracted 4 numbers: x={x}, y={y}, w={w}, h={h}")
-            return (x, y, w, h)
-        elif len(nums) >= 2:
-            # At least x, y - use default size
-            x, y = int(nums[0]), int(nums[1])
-            w = int(nums[2]) if len(nums) > 2 else 80
-            h = int(nums[3]) if len(nums) > 3 else 50
-            print(f"  [INFO] Extracted partial numbers: x={x}, y={y}, w={w}, h={h}")
-            return (x, y, w, h)
+        if result is None:
+            nums = re.findall(r'-?\d+', text)
+            if len(nums) >= 4:
+                result = (int(nums[0]), int(nums[1]), int(nums[2]), int(nums[3]))
+            elif len(nums) >= 2:
+                x, y = int(nums[0]), int(nums[1])
+                w = int(nums[2]) if len(nums) > 2 else 80
+                h = int(nums[3]) if len(nums) > 3 else 50
+                result = (x, y, w, h)
+
+        if result:
+            if self._debug_mode:
+                self._log_debug(f"Parsed bbox: {result} from response: {text[:100]}")
+            return result
 
         print(f"  [WARNING] Could not parse coordinates from: {text[:200]}")
         return None

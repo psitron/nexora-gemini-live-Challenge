@@ -105,13 +105,15 @@ class AgentLoop:
                 time.sleep(0.5)  # Let UI settle
                 screenshot_after = self._safe_capture_screenshot()
 
-                # Reflect on action
+                # Reflect on action - CRITICAL FIX: Pass execution result
                 action_desc = f"{spec.tool_name}({spec.kwargs})"
                 reflection = self.reflection_agent.reflect(
                     task_goal=goal,
                     last_action=action_desc,
                     screenshot_before=screenshot_before,
-                    screenshot_after=screenshot_after
+                    screenshot_after=screenshot_after,
+                    execution_result=result.success,
+                    execution_message=result.message
                 )
 
                 print(f"      [Reflection] {reflection.progress_assessment}: {reflection.observations[:80]}")
