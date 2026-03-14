@@ -14,21 +14,15 @@
       "subtasks": [
         {
           "subtask_id": "T1.1",
-          "title": "Open Jupyter in browser",
-          "sonic_prompt": "Opening Jupyter Notebook in the browser.",
-          "goal": "Navigate to http://localhost:8888 to open Jupyter Notebook. The Jupyter file browser should appear."
+          "title": "Open Jupyter and click New",
+          "sonic_prompt": "Watch as I open Jupyter Notebook and create a new Python notebook.",
+          "goal": "Navigate to http://localhost:8888. Once the Jupyter file browser loads, click the 'New' button in the top right corner. Then click 'Python 3 (ipykernel)' from the dropdown menu."
         },
         {
           "subtask_id": "T1.2",
-          "title": "Create a new Python notebook",
-          "sonic_prompt": "Now I will create a new Python notebook.",
-          "goal": "On the Jupyter file browser page, click the 'New' button on the top-right side, then click 'Python 3 (ipykernel)' from the dropdown to create a new notebook."
-        },
-        {
-          "subtask_id": "T1.3",
           "title": "Write and run Python code",
-          "sonic_prompt": "Typing a simple Python program and running it.",
-          "goal": "In the new Jupyter notebook, click on the first empty code cell, type: print(2+3) then press Shift+Enter to run it. The output 5 should appear below the cell."
+          "sonic_prompt": "Now I will type Python code and run it.",
+          "goal": "Click on the code cell in the notebook. Type: print(2+3) and then press Shift+Enter to run it."
         }
       ]
     },

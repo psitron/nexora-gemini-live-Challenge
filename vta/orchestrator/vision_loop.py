@@ -243,9 +243,9 @@ Here is the current screenshot:"""),
                     if hasattr(part, "function_call") and part.function_call:
                         part_type = f"function_call: {part.function_call.name}({dict(part.function_call.args) if part.function_call.args else {}})"
                     elif hasattr(part, "thought") and part.thought:
-                        part_type = f"thought: {part.text[:150] if part.text else ''}"
+                        part_type = f"thought: {part.text[:300] if part.text else ''}"
                     elif hasattr(part, "text") and part.text:
-                        part_type = f"text: {part.text[:150]}"
+                        part_type = f"text: {part.text[:300]}"
                     elif hasattr(part, "inline_data") and part.inline_data:
                         part_type = "inline_data"
                     logger.info(f"  Part[{i}]: {part_type}")
