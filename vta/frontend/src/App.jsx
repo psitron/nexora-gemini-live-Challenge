@@ -221,8 +221,11 @@ export default function App() {
       setUploadedFile(null);
       setUploadedCurriculum(null);
       setUploadTitle('');
+      setShowUploadForm(false);
+      alert(`Course "${data.title}" uploaded successfully!`);
     } catch (err) {
       console.error('Upload failed:', err);
+      alert('Upload failed. Please try again.');
     }
     setUploading(false);
   }, [uploadedFile, uploadedCurriculum, uploadTitle]);
