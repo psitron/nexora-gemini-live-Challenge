@@ -22,7 +22,10 @@ from typing import Callable, Optional
 
 from google import genai
 from google.genai import types
-from google.genai.types import FunctionResponse as GFunctionResponse
+from google.genai.types import (
+    FunctionResponse as GFunctionResponse,
+    FunctionResponseBlob,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +212,9 @@ Current screenshot:"""),
                     )
                 except Exception as e:
                     logger.error(f"Gemini Computer Use call failed: {e}")
+                    # On API error, remove the last appended content that may be malformed
+                    if len(contents) > 1:
+                        contents.pop()
                     continue
 
                 if not response.candidates:
@@ -318,20 +324,21 @@ Current screenshot:"""),
                         f.write(new_screenshot)
                     logger.info(f"Saved screenshot: {ss_name}")
 
-                    # Build FunctionResponse with screenshot inside (Google's pattern)
+                    # Build FunctionResponse with screenshot INSIDE (exact Google pattern)
                     function_response_parts.append(
                         types.Part(
                             function_response=GFunctionResponse(
                                 name=fc.name,
                                 response={"url": current_url},
+                                parts=[
+                                    types.Part(
+                                        inline_data=FunctionResponseBlob(
+                                            mime_type="image/png",
+                                            data=new_screenshot,
+                                        )
+                                    )
+                                ],
                             ),
-                        )
-                    )
-                    # Screenshot as inline image after the function response
-                    function_response_parts.append(
-                        types.Part.from_bytes(
-                            data=new_screenshot,
-                            mime_type="image/png",
                         )
                     )
 
