@@ -93,7 +93,10 @@ async def run_tutorial(
         is_last = (i == len(tasks) - 1)
 
         if task["type"] == "theory":
-            transcript = await execute_theory_task(task, sonic, brain, ws_send, is_last)
+            transcript = await execute_theory_task(
+                task, sonic, brain, ws_send, is_last,
+                pdf_key=tutorial.get("pdf_s3_key", ""),
+            )
         elif task["type"] == "practical":
             transcript = await execute_practical_task(
                 task, sonic, agent, brain, ws_send, exec_config, is_last
@@ -129,46 +132,58 @@ async def execute_theory_task(
     brain: BrainClient,
     ws_send: Callable,
     is_last: bool = False,
+    pdf_key: str = "",
 ) -> str:
     """
-    Theory task: reconnect with narration prompt, wait for speech done,
-    then wait for student response on the SAME stream (no extra reconnect).
+    Theory task: show slide to student, send slide IMAGE to Gemini so it
+    can SEE and explain it naturally. Falls back to text if no PDF.
 
     Returns:
         Student's spoken response transcript.
     """
-    await ws_send({"event": "show_slide", "page": task["slide_number"]})
+    from vta.orchestrator.pdf_utils import get_pdf_path, extract_slide_image
 
-    context = task.get("slide_context", "") or ""
-    logger.info(f"[THEORY] {task['task_id']} slide_context ({len(context)} chars): {context[:200]}")
+    slide_number = task.get("slide_number")
+    if slide_number:
+        await ws_send({"event": "show_slide", "page": slide_number})
 
-    if not context:
-        context = f"This slide covers: {task['title']}. Explain it clearly."
-
-    if len(context) > 1200:
-        context = context[:1200] + "..."
+    # Try to extract slide as image for vision-based explanation
+    slide_image = None
+    if pdf_key and slide_number:
+        pdf_path = get_pdf_path(pdf_key)
+        if pdf_path:
+            slide_image = extract_slide_image(pdf_path, slide_number)
+            if slide_image:
+                logger.info(f"[THEORY] {task['task_id']} — sending slide {slide_number} image to Gemini ({len(slide_image)} bytes)")
 
     closing = (
-        "Then ask: 'Any questions, or say ready to move on.' Then listen."
+        "After explaining, ask: 'Any questions, or say ready to move on.'"
         if not is_last
         else ""
     )
 
-    prompt = (
-        f"Say these exact words and nothing else:\n\n"
-        f"{context}\n\n"
-        f"{closing}"
-    )
+    if slide_image:
+        # Vision mode: Gemini SEES the slide and explains it
+        prompt = (
+            f"Look at this slide carefully. Explain the content of this slide "
+            f"to the student in a clear, conversational way. "
+            f"Cover all the key points shown in the slide. {closing}"
+        )
+    else:
+        # Fallback: use text context if no image available
+        context = task.get("slide_context", "") or f"This slide covers: {task['title']}."
+        if len(context) > 1200:
+            context = context[:1200] + "..."
+        prompt = f"Explain the following to the student:\n\n{context}\n\n{closing}"
 
     await ws_send({"event": "aria_thinking"})
     await sonic.reconnect(prompt_override=prompt)
-    await sonic.send_text_kickstart("Please begin.")
+    await sonic.send_text_kickstart("Please begin.", image_bytes=slide_image)
     await sonic.wait_for_speech_done(timeout=90)
     await sonic.wait_for_playback_done(timeout=15)
-    logger.info(f"Theory task {task['task_id']} narration complete — listening for student")
+    logger.info(f"Theory task {task['task_id']} narration complete — listening")
     await ws_send({"event": "aria_listening"})
 
-    # Listen on the SAME stream — Sonic already asked the question at the end
     transcript = await sonic.wait_for_student_speech(timeout=120)
     logger.info(f"Student response after {task['task_id']}: '{transcript}'")
     return transcript

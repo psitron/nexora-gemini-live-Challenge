@@ -175,8 +175,12 @@ class GeminiLiveClient:
         await self._teardown()
         return await self._create_session(self._system_prompt or ARIA_SYSTEM_PROMPT)
 
-    async def send_text_kickstart(self, text: str = "Please begin."):
-        """Send the pending instruction to make the model speak."""
+    async def send_text_kickstart(self, text: str = "Please begin.", image_bytes: bytes = None):
+        """Send instruction (with optional image) to make the model speak.
+
+        If image_bytes is provided, sends both the text instruction and
+        the image (e.g., a PDF slide) so the model can SEE and explain it.
+        """
         if not self.is_active or not self._session:
             logger.warning("Not ready for kickstart")
             return
@@ -188,14 +192,17 @@ class GeminiLiveClient:
         instruction = self._pending_instruction or text
         self._pending_instruction = None
 
-        logger.info(f">>> {instruction[:100]}")
+        # Build parts: text + optional image
+        parts = [types.Part(text=instruction)]
+        if image_bytes:
+            parts.append(types.Part.from_bytes(data=image_bytes, mime_type="image/png"))
+            logger.info(f">>> {instruction[:80]} [+image {len(image_bytes)}B]")
+        else:
+            logger.info(f">>> {instruction[:100]}")
 
         try:
             await self._session.send_client_content(
-                turns=types.Content(
-                    role="user",
-                    parts=[types.Part(text=instruction)],
-                ),
+                turns=types.Content(role="user", parts=parts),
                 turn_complete=True,
             )
         except Exception as e:
