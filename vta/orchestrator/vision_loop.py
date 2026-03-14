@@ -28,9 +28,9 @@ logger = logging.getLogger(__name__)
 
 MAX_STEPS = 20
 
-# Browser viewport size
-SCREEN_WIDTH = 1920
-SCREEN_HEIGHT = 1080
+# Browser viewport size — match Xvfb display (1280x800)
+SCREEN_WIDTH = 1280
+SCREEN_HEIGHT = 800
 
 # Gemini Computer Use model
 COMPUTER_USE_MODEL = "gemini-3-flash-preview"
@@ -135,10 +135,10 @@ class VisionLoop:
                 start_url = url_match.group(0).rstrip('.')
                 logger.info(f"Goal contains URL — navigating to: {start_url}")
                 try:
-                    await page.goto(start_url, wait_until="domcontentloaded", timeout=15000)
+                    await page.goto(start_url, wait_until="networkidle", timeout=30000)
                 except Exception as e:
                     logger.warning(f"Initial navigation failed: {e}")
-                await asyncio.sleep(2)
+                await asyncio.sleep(3)  # Extra wait for Jupyter to fully render
 
             # Take initial screenshot
             screenshot = await page.screenshot()
