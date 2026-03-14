@@ -213,22 +213,21 @@ class DesktopVisionLoop:
             types.Content(
                 role="user",
                 parts=[
-                    types.Part(text=f"""You are a Linux desktop automation agent controlling an XFCE desktop.
-Look at this screenshot of the desktop ({SCREEN_WIDTH}x{SCREEN_HEIGHT} pixels).
+                    types.Part(text=f"""You are a Linux desktop automation agent. This is a screenshot of a Linux XFCE desktop, NOT a web browser.
 
 GOAL: {goal}
 
-RULES:
-- Use click_at to click on UI elements. Coordinates are normalized 0-1000.
-- Use type_text_at to click a field and type text.
-- Use key_combination for keyboard shortcuts.
-- To open a terminal: look for terminal in the taskbar or right-click desktop.
-- To run commands: click on terminal, then type_text_at with the command.
-- NEVER install software. All required software is already installed.
-- When the goal is complete, respond with a text summary.
-- If you cannot complete the goal, respond with a text explanation.
+ACTIONS AVAILABLE:
+- click_at(x, y) — click on desktop UI elements (coordinates 0-1000)
+- type_text_at(x, y, text, press_enter) — click a field and type text
+- key_combination(keys) — press keyboard shortcuts
+- wait_5_seconds() — wait for something to load
 
-Current screenshot:"""),
+DO NOT open a web browser. DO NOT use navigate. This is desktop automation only.
+To type a command in a terminal: use type_text_at on the terminal window.
+When the goal is achieved, respond with a text summary.
+
+Screenshot:"""),
                     types.Part(
                         inline_data=types.Blob(
                             data=screenshot,
@@ -239,11 +238,19 @@ Current screenshot:"""),
             ),
         ]
 
-        # Configure Computer Use tool
+        # Configure Computer Use tool for DESKTOP (not browser)
+        # Exclude browser-specific functions to prevent AI from opening Firefox
         computer_use_tool = types.Tool(
             computer_use=types.ComputerUse(
                 environment=types.Environment.ENVIRONMENT_BROWSER,
-                excluded_predefined_functions=["drag_and_drop"],
+                excluded_predefined_functions=[
+                    "drag_and_drop",
+                    "open_web_browser",
+                    "navigate",
+                    "go_back",
+                    "go_forward",
+                    "search",
+                ],
             ),
         )
 
