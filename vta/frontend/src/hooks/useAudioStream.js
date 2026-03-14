@@ -3,16 +3,14 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 /**
  * Audio streaming hook for microphone capture and playback.
  *
- * Captures mic audio at 16kHz mono, encodes to base64 LPCM,
- * and sends chunks via WebSocket.
- *
- * Plays received 24kHz audio chunks from Nova Sonic.
+ * Captures mic audio at 16kHz mono PCM, sends as base64 via WebSocket.
+ * Plays received 24kHz audio chunks from Gemini.
  */
 export default function useAudioStream(wsSend) {
   const [isMicActive, setIsMicActive] = useState(false);
   const mediaStreamRef = useRef(null);
-  const processorRef = useRef(null);
   const audioContextRef = useRef(null);
+  const workletNodeRef = useRef(null);
   const playbackContextRef = useRef(null);
   const playbackQueueRef = useRef([]);
   const isPlayingRef = useRef(false);
@@ -28,76 +26,49 @@ export default function useAudioStream(wsSend) {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
+          sampleRate: 16000,
+          channelCount: 1,
         },
       });
 
       mediaStreamRef.current = stream;
 
+      // Create AudioContext at 16kHz to avoid resampling
       const audioContext = new (window.AudioContext || window.webkitAudioContext)({
+        sampleRate: 16000,
         latencyHint: 'interactive',
       });
       audioContextRef.current = audioContext;
 
       const source = audioContext.createMediaStreamSource(stream);
 
-      // Use smaller buffer size (512) for lower latency
-      const processor = audioContext.createScriptProcessor(512, 1, 1);
-      processorRef.current = processor;
+      // Use ScriptProcessorNode with larger buffer (4096) for stability
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
-      processor.onaudioprocess = async (event) => {
-        const inputBuffer = event.inputBuffer;
-        const targetSampleRate = 16000;
+      processor.onaudioprocess = (event) => {
+        const float32Data = event.inputBuffer.getChannelData(0);
 
-        try {
-          // Create offline context for resampling to 16kHz
-          const offlineContext = new OfflineAudioContext({
-            numberOfChannels: 1,
-            length: Math.ceil(inputBuffer.duration * targetSampleRate),
-            sampleRate: targetSampleRate,
-          });
-
-          // Copy input to offline context buffer
-          const offlineSource = offlineContext.createBufferSource();
-          const monoBuffer = offlineContext.createBuffer(
-            1,
-            inputBuffer.length,
-            inputBuffer.sampleRate
-          );
-          monoBuffer.copyToChannel(inputBuffer.getChannelData(0), 0);
-
-          offlineSource.buffer = monoBuffer;
-          offlineSource.connect(offlineContext.destination);
-          offlineSource.start(0);
-
-          // Resample
-          const renderedBuffer = await offlineContext.startRendering();
-          const resampled = renderedBuffer.getChannelData(0);
-
-          // Convert to Int16 PCM
-          const buffer = new ArrayBuffer(resampled.length * 2);
-          const pcmData = new DataView(buffer);
-
-          for (let i = 0; i < resampled.length; i++) {
-            const s = Math.max(-1, Math.min(1, resampled[i]));
-            pcmData.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-          }
-
-          // Convert to base64
-          const base64 = arrayBufferToBase64(buffer);
-
-          // Send to orchestrator
-          wsSend({
-            event: 'student_audio',
-            data: base64,
-          });
-        } catch (err) {
-          console.error('Audio processing error:', err);
+        // Convert Float32 to Int16 PCM
+        const int16Array = new Int16Array(float32Data.length);
+        for (let i = 0; i < float32Data.length; i++) {
+          const s = Math.max(-1, Math.min(1, float32Data[i]));
+          int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
         }
+
+        // Convert to base64
+        const base64 = arrayBufferToBase64(int16Array.buffer);
+
+        // Send to orchestrator
+        wsSend({
+          event: 'student_audio',
+          data: base64,
+        });
       };
 
       source.connect(processor);
       processor.connect(audioContext.destination);
 
+      workletNodeRef.current = processor;
       setIsMicActive(true);
     } catch (err) {
       console.error('Microphone access denied:', err);
@@ -105,9 +76,9 @@ export default function useAudioStream(wsSend) {
   }, [wsSend]);
 
   const stopMic = useCallback(async () => {
-    if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current = null;
+    if (workletNodeRef.current) {
+      workletNodeRef.current.disconnect();
+      workletNodeRef.current = null;
     }
 
     if (audioContextRef.current) {
@@ -133,8 +104,7 @@ export default function useAudioStream(wsSend) {
   }, []);
 
   const handleInterruption = useCallback(() => {
-    // Clear audio queue when Sonic signals interruption
-    console.log('[AUDIO] Sonic signaled interruption - clearing queue');
+    console.log('[AUDIO] Interruption - clearing queue');
     playbackQueueRef.current = [];
     isPlayingRef.current = false;
   }, []);
@@ -157,7 +127,6 @@ export default function useAudioStream(wsSend) {
 
     const ctx = playbackContextRef.current;
 
-    // Resume context if suspended
     if (ctx.state === 'suspended') {
       try {
         await ctx.resume();
@@ -188,7 +157,6 @@ export default function useAudioStream(wsSend) {
     } catch (err) {
       console.error('Audio playback error:', err);
       isPlayingRef.current = false;
-      // Try to continue with next chunk
       if (playbackQueueRef.current.length > 0) {
         setTimeout(() => processPlaybackQueue(), 100);
       }
@@ -216,19 +184,10 @@ export default function useAudioStream(wsSend) {
 
 // --- Utility Functions ---
 
-function float32ToInt16(float32Array) {
-  const int16Array = new Int16Array(float32Array.length);
-  for (let i = 0; i < float32Array.length; i++) {
-    const s = Math.max(-1, Math.min(1, float32Array[i]));
-    int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-  }
-  return int16Array;
-}
-
 function int16ToFloat32(int16Array) {
   const float32Array = new Float32Array(int16Array.length);
   for (let i = 0; i < int16Array.length; i++) {
-    float32Array[i] = int16Array[i] / 0x7fff;
+    float32Array[i] = int16Array[i] / 0x7FFF;
   }
   return float32Array;
 }
