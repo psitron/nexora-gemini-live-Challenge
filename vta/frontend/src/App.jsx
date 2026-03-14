@@ -7,6 +7,7 @@ import NoVNCPanel from './components/NoVNCPanel';
 import ConfirmationBar from './components/ConfirmationBar';
 import TaskProgress from './components/TaskProgress';
 import MicrophoneInput from './components/MicrophoneInput';
+import CurriculumBuilder from './components/CurriculumBuilder';
 
 
 // Direct connection to WSL2 IP address
@@ -56,6 +57,7 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [availableTutorials, setAvailableTutorials] = useState([]);
   const [showUploadForm, setShowUploadForm] = useState(false);
+  const [showBuilder, setShowBuilder] = useState(false);
 
   // UI state
   const [messages, setMessages] = useState([]);
@@ -335,7 +337,18 @@ export default function App() {
             </div>
           )}
 
-          {!sessionId && (
+          {!sessionId && showBuilder && (
+            <CurriculumBuilder
+              onSave={(data) => {
+                setAvailableTutorials(prev => [...prev, { tutorial_id: data.tutorial_id, title: data.title, task_count: data.task_count }]);
+                setSelectedTutorialId(data.tutorial_id);
+                setShowBuilder(false);
+              }}
+              onCancel={() => setShowBuilder(false)}
+            />
+          )}
+
+          {!sessionId && !showBuilder && (
             <div className="start-session">
               {/* Course List */}
               <div className="course-list">
@@ -367,12 +380,14 @@ export default function App() {
               </div>
 
               {/* Upload New Course */}
-              <button
-                className="toggle-upload-btn"
-                onClick={() => setShowUploadForm(!showUploadForm)}
-              >
-                {showUploadForm ? 'Cancel' : '+ Add New Course'}
-              </button>
+              <div className="course-action-buttons">
+                <button className="toggle-upload-btn" onClick={() => setShowBuilder(true)}>
+                  Create Course
+                </button>
+                <button className="toggle-upload-btn" onClick={() => setShowUploadForm(!showUploadForm)}>
+                  {showUploadForm ? 'Cancel' : 'Upload Existing'}
+                </button>
+              </div>
 
               {showUploadForm && (
                 <div className="upload-section">
