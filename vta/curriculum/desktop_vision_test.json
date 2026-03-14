@@ -22,13 +22,13 @@
           "subtask_id": "T1.2",
           "title": "Run ls command",
           "sonic_prompt": "Now I will type the ls command to list files.",
-          "goal": "A terminal window is already open on the screen. Click on the terminal window to make sure it is focused. Then type 'ls' and press Enter to list files in the current directory."
+          "goal": "Type 'ls' in the terminal and press Enter. The terminal is already open and focused."
         },
         {
           "subtask_id": "T1.3",
           "title": "Run pwd command",
           "sonic_prompt": "Now I will run the pwd command to show the current directory.",
-          "goal": "In the terminal that is already open, type 'pwd' and press Enter to show the current working directory."
+          "goal": "Type 'pwd' in the terminal and press Enter. The terminal is already open and focused."
         }
       ]
     }
