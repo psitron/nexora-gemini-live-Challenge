@@ -98,6 +98,59 @@ Respond with ONLY a JSON object, no other text:
             # Default to continue on error to avoid blocking
             return {"action": "continue", "question_text": ""}
 
+    async def explain_slide(self, image_bytes: bytes, slide_title: str = "") -> str:
+        """
+        Analyze a slide image and generate a spoken explanation.
+
+        Uses Gemini's vision capability to see the slide and describe it
+        in a way suitable for a voice tutor to speak aloud.
+
+        Args:
+            image_bytes: PNG image of the slide.
+            slide_title: Optional title for context.
+
+        Returns:
+            Explanation text suitable for voice delivery.
+        """
+        prompt = (
+            f"You are a voice tutor explaining a slide to a student. "
+            f"Look at this slide image carefully and explain ALL the key points "
+            f"shown on the slide. Be clear, conversational, and thorough. "
+            f"The explanation will be spoken aloud, so keep it natural. "
+            f"Do not describe the visual layout — focus on the content and concepts."
+        )
+        if slide_title:
+            prompt += f"\n\nSlide title: {slide_title}"
+
+        try:
+            response = await self.client.aio.models.generate_content(
+                model=self.model_id,
+                contents=[
+                    genai.types.Content(
+                        role="user",
+                        parts=[
+                            genai.types.Part(text=prompt),
+                            genai.types.Part(
+                                inline_data=genai.types.Blob(
+                                    data=image_bytes,
+                                    mime_type="image/png",
+                                )
+                            ),
+                        ],
+                    )
+                ],
+                config=genai.types.GenerateContentConfig(
+                    max_output_tokens=1024,
+                    temperature=0.5,
+                ),
+            )
+
+            return response.text.strip()
+
+        except Exception as e:
+            logger.error(f"Brain explain_slide error: {e}")
+            return f"This slide covers {slide_title}. Let me explain the key points."
+
     async def answer_question(self, question: str, context: str = "") -> str:
         """
         Generate a concise answer for spoken delivery (2-3 sentences).

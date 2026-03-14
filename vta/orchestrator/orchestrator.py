@@ -163,12 +163,13 @@ async def execute_theory_task(
     )
 
     if slide_image:
-        # Vision mode: Gemini SEES the slide and explains it
-        prompt = (
-            f"Look at this slide carefully. Explain the content of this slide "
-            f"to the student in a clear, conversational way. "
-            f"Cover all the key points shown in the slide. {closing}"
-        )
+        # Vision mode: use BrainClient (Gemini 3 Flash) to analyze the slide,
+        # then feed the explanation to Live API for voice output.
+        # Native audio model doesn't support images — need two-step approach.
+        logger.info(f"[THEORY] Analyzing slide {slide_number} with vision model...")
+        explanation = await brain.explain_slide(slide_image, task.get("title", ""))
+        logger.info(f"[THEORY] Vision explanation ({len(explanation)} chars): {explanation[:200]}")
+        prompt = f"Say these exact words:\n\n{explanation}\n\n{closing}"
     else:
         # Fallback: use text context if no image available
         context = task.get("slide_context", "") or f"This slide covers: {task['title']}."
@@ -178,7 +179,7 @@ async def execute_theory_task(
 
     await ws_send({"event": "aria_thinking"})
     await sonic.reconnect(prompt_override=prompt)
-    await sonic.send_text_kickstart("Please begin.", image_bytes=slide_image)
+    await sonic.send_text_kickstart("Please begin.")
     await sonic.wait_for_speech_done(timeout=90)
     await sonic.wait_for_playback_done(timeout=15)
     logger.info(f"Theory task {task['task_id']} narration complete — listening")
