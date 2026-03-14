@@ -37,6 +37,11 @@ class ModelSettings:
     bedrock_text_model_id: str
     bedrock_execution_model_id: str
 
+    # Google Cloud settings (for GCE deployment)
+    google_cloud_project: Optional[str]
+    google_cloud_location: str
+    gemini_computer_use_model: str
+
     # Other models (legacy)
     anthropic_api_key: Optional[str]
     anthropic_task_model: str
@@ -126,6 +131,11 @@ def load_settings(dotenv: bool = True) -> Settings:
         bedrock_vision_model_id=os.getenv("BEDROCK_VISION_MODEL_ID", "us.amazon.nova-lite-v1:0"),
         bedrock_text_model_id=os.getenv("BEDROCK_TEXT_MODEL_ID", "us.anthropic.claude-3-5-sonnet-20241022-v2:0"),
         bedrock_execution_model_id=os.getenv("BEDROCK_EXECUTION_MODEL_ID", "us.anthropic.claude-3-haiku-20240307-v1:0"),
+
+        # Google Cloud settings
+        google_cloud_project=os.getenv("GOOGLE_CLOUD_PROJECT"),
+        google_cloud_location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
+        gemini_computer_use_model=os.getenv("GEMINI_COMPUTER_USE_MODEL", "gemini-2.0-flash"),
 
         # Other models (legacy)
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),

@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(find /e/amazon_nova_sonic/nova-s2s-workshop -type f \\\\\\( -name \"README*\" -o -name \"*.md\" \\\\\\) 2>/dev/null | head -10)",
+      "Bash(find /e/ui-agent/vta -name \"*.json\" -path \"*/curriculum*\" 2>/dev/null | head -5)",
+      "Bash(cd \"E:/ui-agent/vta\" && python -c \"import ast; ast.parse\\(open\\('orchestrator/sonic_client.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(cd \"E:/ui-agent/vta\" && python -c \"import ast; ast.parse\\(open\\('orchestrator/sonic_client.py'\\).read\\(\\)\\); ast.parse\\(open\\('orchestrator/orchestrator.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(cd \"E:/ui-agent/vta\" && python -c \"import ast; ast.parse\\(open\\('orchestrator/main.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(cd \"E:/ui-agent/vta\" && python -c \"import ast; ast.parse\\(open\\('orchestrator/orchestrator.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "WebSearch",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(gh api:*)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/aws-samples/amazon-nova-samples/main/speech-to-speech/amazon-nova-2-sonic/sample-codes/console-python/nova_sonic_with_text.py\")",
+      "Bash(find E:/ui-agent/perception -type f -name \"*.py\" | sort 2>/dev/null; find E:/ui-agent/execution -type f -name \"*.py\" | sort)",
+      "Bash(cd /e/ui-agent && scp -o StrictHostKeyChecking=no -i ~/.ssh/vta-key.pem vta/orchestrator/orchestrator.py ubuntu@13.222.15.168:/opt/vta/vta/orchestrator/orchestrator.py 2>&1 || echo \"Trying without pem...\" && scp -o StrictHostKeyChecking=no vta/orchestrator/orchestrator.py ubuntu@13.222.15.168:/opt/vta/vta/orchestrator/orchestrator.py 2>&1)",
+      "Bash(scp -o StrictHostKeyChecking=no -i \"/mnt/e/MLOps/VTA-Server.ppk\" /mnt/e/ui-agent/vta/orchestrator/orchestrator.py ubuntu@13.222.15.168:/opt/vta/vta/orchestrator/orchestrator.py 2>&1)",
+      "Bash(wslpath \"E:/ui-agent/vta/orchestrator/orchestrator.py\" 2>/dev/null || echo \"not wsl\")"
+    ]
+  }
+}

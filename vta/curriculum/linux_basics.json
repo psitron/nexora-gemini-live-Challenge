@@ -1,0 +1,94 @@
+{
+  "tutorial_id": "linux_basics_v1",
+  "title": "Basic Linux Commands",
+  "description": "Introduction to Linux and fundamental terminal commands",
+  "pdf_url": "https://psitron.s3.ap-southeast-1.amazonaws.com/Machine+Learning+Operations+%28MLOps%29+Specialization+Course+Nov+2024/Module+3+-+Git+Essentials+for+MLOps+Practitioners.pdf",
+  "tasks": [
+    {
+      "task_id": "T1",
+      "type": "theory",
+      "title": "What is Linux?",
+      "slide_number": 1,
+      "slide_context": "Linux is an open-source operating system first created by Linus Torvalds in 1991. It powers over 90 percent of the world's servers, all Android devices, and most supercomputers. Unlike Windows or macOS, Linux is free, highly customizable, and gives users direct control through the command line. Learning Linux is essential for any developer, DevOps engineer, or system administrator.",
+      "sonic_prompt": null,
+      "subtasks": []
+    },
+    {
+      "task_id": "T2",
+      "type": "theory",
+      "title": "Understanding the Linux Terminal",
+      "slide_number": 2,
+      "slide_context": "The Linux terminal, also called the command-line interface or CLI, is a text window where you type commands directly to the operating system. It is faster and more powerful than a graphical interface for most tasks. Every Linux command follows the pattern: command name, options, then arguments. For example, ls -la /home lists all files including hidden ones in the home directory.",
+      "sonic_prompt": null,
+      "subtasks": []
+    },
+    {
+      "task_id": "T3",
+      "type": "practical",
+      "title": "Hands-On: Linux Commands",
+      "slide_number": null,
+      "slide_context": null,
+      "sonic_prompt": "Now let us put everything into practice. I will demonstrate each command live on this machine. Watch the terminal carefully.",
+      "subtasks": [
+        {
+          "subtask_id": "T3.1",
+          "title": "Open the Linux Terminal",
+          "sonic_prompt": "First, let me open the Linux terminal. This is where all our commands will run.",
+          "action": "open_terminal",
+          "params": {},
+          "reflex_check": "terminal_visible"
+        },
+        {
+          "subtask_id": "T3.2",
+          "title": "Run the ls command",
+          "sonic_prompt": "Now watch as I run the ls command. It lists every file and folder in the current directory. You will use this constantly.",
+          "action": "run_command",
+          "params": { "cmd": "ls" },
+          "reflex_check": "command_output_visible"
+        },
+        {
+          "subtask_id": "T3.3",
+          "title": "Run the pwd command",
+          "sonic_prompt": "Next is pwd — print working directory. It shows exactly where you are in the file system right now.",
+          "action": "run_command",
+          "params": { "cmd": "pwd" },
+          "reflex_check": "command_output_visible"
+        }
+      ]
+    },
+    {
+      "task_id": "T4",
+      "type": "vision_driven",
+      "title": "Jupyter Notebook: Write and Run Python Code",
+      "sonic_prompt": "Now I will show you how to use Jupyter Notebook to write and run Python code. Watch carefully.",
+      "slide_number": null,
+      "slide_context": null,
+      "subtasks": [
+        {
+          "subtask_id": "T4.1",
+          "title": "Start Jupyter and open in Firefox",
+          "sonic_prompt": "First, I will open a terminal and start Jupyter Notebook, then open it in Firefox.",
+          "goal": "Jupyter Notebook is already installed. Do NOT install it. Open a terminal and run ONLY this command: jupyter notebook --no-browser --ip=0.0.0.0 --port=8888 & Then wait 3 seconds and run: firefox http://localhost:8888"
+        },
+        {
+          "subtask_id": "T4.2",
+          "title": "Create a new Python notebook",
+          "sonic_prompt": "Now I will create a new Python notebook by clicking the New button.",
+          "goal": "Jupyter Notebook is already open in Firefox at localhost:8888. Do NOT run any install commands. Click the 'New' button on the right side of the Jupyter interface and then click 'Python 3 (ipykernel)' to create a new notebook."
+        },
+        {
+          "subtask_id": "T4.3",
+          "title": "Click on the code cell",
+          "sonic_prompt": "Now I will click on the first code cell to start writing Python code.",
+          "goal": "In the open Jupyter notebook, click on the first empty code cell so it is active and ready for input."
+        },
+        {
+          "subtask_id": "T4.4",
+          "title": "Write and run Python code",
+          "sonic_prompt": "Finally, I will type a simple Python program to add two plus three and run it.",
+          "goal": "In the active Jupyter code cell, type the code: print(2+3) then press Shift+Enter to run it. Verify the output 5 appears below the cell."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+# VTA - Virtual Trainer Agent
+# Python dependencies for Agent S3 + Task Orchestrator
+
+# Web framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+websockets>=13.0
+python-multipart>=0.0.9
+
+# Google Gemini SDK (Live API, Computer Use, text generation)
+# NOTE: google-genai brings in httpx>=0.28.1 and websockets>=13.0
+google-genai>=1.0.0
+
+# Image processing (Linux deployment only — no prebuilt wheel for Python 3.14 on Windows)
+# Pillow>=11.0.0
+
+# Config
+python-dotenv>=1.0.1
+
+# Logging
+colorlog>=6.8.2
+
+# ── Linux-only (install manually on deployment server) ──
+# pyautogui==0.9.54
+# pynput==1.7.7
+# python-xlib==0.33
+# mss==9.0.1
+# pytesseract==0.3.10
