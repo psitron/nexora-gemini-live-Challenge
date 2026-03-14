@@ -77,8 +77,12 @@ class VisionLoop:
 
         self._playwright = await async_playwright().start()
         self._browser = await self._playwright.chromium.launch(
-            headless=False,  # Show browser for demo visibility
-            args=["--start-maximized"],
+            headless=True,  # Headless for reliable screenshots
+            args=[
+                "--no-sandbox",
+                "--disable-gpu",
+                "--disable-dev-shm-usage",
+            ],
         )
         logger.info("Playwright browser launched")
 
