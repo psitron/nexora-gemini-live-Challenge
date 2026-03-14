@@ -739,6 +739,13 @@ body {
   height: 100%;
 }
 
+.novnc-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  min-height: 600px;
+}
+
 .novnc-connecting {
   position: absolute;
   top: 50%;

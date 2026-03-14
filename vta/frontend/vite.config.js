@@ -36,6 +36,11 @@ import fs from 'fs'
           target: 'http://localhost:5000',
           changeOrigin: true,
         },
+        '/websockify': {
+          target: 'ws://localhost:6080',
+          ws: true,
+          changeOrigin: true,
+        },
       },
     },
   })
