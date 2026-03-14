@@ -293,8 +293,8 @@ Here is the current screenshot:"""),
                     except Exception as e:
                         logger.error(f"Action '{fc.name}' failed: {e}")
 
-                    # Wait for page to settle
-                    await asyncio.sleep(1.0)
+                    # Wait for page to settle after action
+                    await asyncio.sleep(2.0)
 
                     # Take new screenshot
                     new_screenshot = await page.screenshot()
@@ -349,7 +349,11 @@ Here is the current screenshot:"""),
         if name == "navigate":
             url = args.get("url", "")
             logger.info(f"Navigating to: {url}")
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            try:
+                await page.goto(url, wait_until="networkidle", timeout=30000)
+            except Exception:
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            await asyncio.sleep(3)  # Wait for page to fully render
 
         elif name == "click_at":
             px_x = _normalize_x(args.get("x", 0))
