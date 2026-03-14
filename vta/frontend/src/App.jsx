@@ -215,6 +215,10 @@ export default function App() {
 
     try {
       const resp = await fetch('/api/upload-tutorial', { method: 'POST', body: formData });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`Upload failed (${resp.status}): ${errText}`);
+      }
       const data = await resp.json();
       setSelectedTutorialId(data.tutorial_id);
       setAvailableTutorials(prev => [...prev, { tutorial_id: data.tutorial_id, title: data.title, task_count: data.task_count }]);
