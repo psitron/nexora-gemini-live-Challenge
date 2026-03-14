@@ -20,16 +20,11 @@ start() {
     cd "$REPO_DIR"
     source .venv/bin/activate
     export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-    export GEMINI_API_KEY="${GEMINI_API_KEY:-}"
     export VTA_LOCAL_CURRICULUM=true
     export VTA_LOCAL_STATE=true
     export PYTHONPATH="$REPO_DIR"
     export DISPLAY=:1
-
-    if [ -z "$GEMINI_API_KEY" ]; then
-        echo "ERROR: GEMINI_API_KEY not set. Run: export GEMINI_API_KEY='your-key'"
-        exit 1
-    fi
+    # GEMINI_API_KEY is provided by the user via the frontend UI
 
     # Xvfb
     if ! pgrep -x "Xvfb" > /dev/null; then
