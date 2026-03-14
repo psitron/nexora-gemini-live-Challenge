@@ -22,7 +22,7 @@
           "subtask_id": "T1.2",
           "title": "Write and run Python code",
           "sonic_prompt": "Now I will type Python code and run it.",
-          "goal": "Click on the code cell in the notebook. Type: print(2+3) and then press Shift+Enter to run it."
+          "goal": "A Jupyter notebook is already open. Do NOT create a new notebook. Do NOT click the New button. The code cell is already visible. Click on the empty code cell, type: print(2+3) and then press Shift+Enter to run it."
         }
       ]
     },

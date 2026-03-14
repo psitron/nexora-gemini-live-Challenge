@@ -543,6 +543,7 @@ class GeminiLiveClient:
                         model_text = sc.output_transcription.text.strip()
                         if model_text:
                             self._output_transcript_buffer.append(model_text)
+                            logger.info(f"[GEMINI SPEAKING] {model_text}")
 
             # receive() iterator exhausted = server closed the session
             logger.info("Gemini Live session ended (server closed connection)")
