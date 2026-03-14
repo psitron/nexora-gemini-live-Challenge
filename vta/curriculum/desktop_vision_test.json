@@ -1,0 +1,36 @@
+{
+  "tutorial_id": "desktop_vision_test_v1",
+  "title": "Desktop Vision Test",
+  "description": "Test desktop vision: AI sees the screen and interacts with desktop apps",
+  "pdf_url": "",
+  "tasks": [
+    {
+      "task_id": "T1",
+      "type": "desktop_vision",
+      "title": "Open Terminal and Run Commands",
+      "sonic_prompt": "Watch as I open a terminal and run some commands on the desktop.",
+      "slide_number": null,
+      "slide_context": null,
+      "subtasks": [
+        {
+          "subtask_id": "T1.1",
+          "title": "Open a terminal",
+          "sonic_prompt": "First, I will open a terminal on the desktop.",
+          "goal": "Open the XFCE terminal. Look for the terminal icon in the taskbar at the bottom of the screen, or right-click on the desktop and select 'Open Terminal Here'."
+        },
+        {
+          "subtask_id": "T1.2",
+          "title": "Run ls command",
+          "sonic_prompt": "Now I will type the ls command to list files.",
+          "goal": "A terminal window is already open on the screen. Click on the terminal window to make sure it is focused. Then type 'ls' and press Enter to list files in the current directory."
+        },
+        {
+          "subtask_id": "T1.3",
+          "title": "Run pwd command",
+          "sonic_prompt": "Now I will run the pwd command to show the current directory.",
+          "goal": "In the terminal that is already open, type 'pwd' and press Enter to show the current working directory."
+        }
+      ]
+    }
+  ]
+}

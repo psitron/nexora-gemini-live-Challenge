@@ -19,6 +19,7 @@ from vta.orchestrator.curriculum_manager import get_curriculum_manager
 from vta.orchestrator.session_state import get_session_state_manager
 from vta.orchestrator.execution_mode import ExecutionMode, ExecutionConfig
 from vta.orchestrator.vision_loop import VisionLoop
+from vta.orchestrator.desktop_vision_loop import DesktopVisionLoop
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ _slide_cache_tasks: dict[str, asyncio.Task] = {}  # background prefetch tasks
 
 # Lazily initialised so imports don't fail if core/ deps are missing at startup
 _vision_loop: Optional[VisionLoop] = None
+_desktop_vision_loop: Optional[DesktopVisionLoop] = None
 
 
 def _get_vision_loop() -> VisionLoop:
@@ -35,6 +37,13 @@ def _get_vision_loop() -> VisionLoop:
     if _vision_loop is None:
         _vision_loop = VisionLoop()
     return _vision_loop
+
+
+def _get_desktop_vision_loop() -> DesktopVisionLoop:
+    global _desktop_vision_loop
+    if _desktop_vision_loop is None:
+        _desktop_vision_loop = DesktopVisionLoop()
+    return _desktop_vision_loop
 
 
 async def run_tutorial(
@@ -119,6 +128,8 @@ async def run_tutorial(
             )
         elif task["type"] == "vision_driven":
             transcript = await execute_vision_task(task, sonic, agent, brain, ws_send, is_last)
+        elif task["type"] == "desktop_vision":
+            transcript = await execute_desktop_vision_task(task, sonic, agent, brain, ws_send, is_last)
         else:
             transcript = ""
 
@@ -343,6 +354,83 @@ async def execute_practical_task(
     # Listen on the SAME stream — no extra reconnect
     transcript = await sonic.wait_for_student_speech(timeout=120)
     logger.info(f"Student response after practical {task['task_id']}: '{transcript}'")
+    return transcript
+
+
+async def execute_desktop_vision_task(
+    task: dict,
+    sonic: SonicClient,
+    agent: AgentS3Client,
+    brain: BrainClient,
+    ws_send: Callable,
+    is_last: bool = False,
+) -> str:
+    """
+    Desktop vision task: AI sees the desktop screen via Agent S3 screenshots
+    and interacts with any desktop application (file manager, terminal, etc.)
+    using pyautogui/xdotool through Agent S3.
+
+    Curriculum format:
+        {
+            "type": "desktop_vision",
+            "title": "...",
+            "goal": "Open the file manager and navigate to /home",
+            "sonic_prompt": "Watch as I navigate the desktop."
+        }
+    """
+    subtasks = task.get("subtasks", [])
+    sonic_intro = task.get("sonic_prompt") or f"Watch carefully. I will now demonstrate {task.get('title', 'this task')}."
+
+    await ws_send({"event": "show_desktop"})
+
+    # Intro narration
+    intro_prompt = f"Say these exact words and nothing else:\n\n{sonic_intro}"
+    await sonic.reconnect(prompt_override=intro_prompt)
+    await sonic.send_text_kickstart("Please begin.")
+    await sonic.wait_for_speech_done(timeout=30)
+    await sonic.wait_for_playback_done(timeout=10)
+
+    desktop_loop = _get_desktop_vision_loop()
+
+    if subtasks:
+        for subtask in subtasks:
+            subtask_id = subtask["subtask_id"]
+            subtask_goal = subtask.get("goal", subtask["title"])
+            subtask_prompt = subtask.get("sonic_prompt", subtask["title"])
+
+            await ws_send({"event": "subtask_started", "subtask_id": subtask_id})
+
+            narration_prompt = f"Say these exact words and nothing else:\n\n{subtask_prompt}"
+            await sonic.reconnect(prompt_override=narration_prompt)
+            await sonic.send_text_kickstart("Please begin.")
+            await sonic.wait_for_speech_done(timeout=30)
+            await sonic.wait_for_playback_done(timeout=10)
+
+            logger.info(f"Desktop vision loop for subtask {subtask_id}: {subtask_goal}")
+            result = await desktop_loop.run(goal=subtask_goal, agent=agent, ws_send=ws_send)
+            logger.info(f"Subtask {subtask_id} result: success={result.success} — {result.message}")
+
+            await ws_send({"event": "subtask_completed", "subtask_id": subtask_id})
+    else:
+        goal = task.get("goal", task.get("title", "complete the task"))
+        logger.info(f"Starting desktop vision loop for goal: {goal}")
+        result = await desktop_loop.run(goal=goal, agent=agent, ws_send=ws_send)
+
+    # Summary
+    closing = "Any questions, or say ready to continue." if not is_last else ""
+    summary_prompt = (
+        f"Say these exact words and nothing else:\n\n"
+        f"That completes the demonstration. {closing}"
+    )
+    await ws_send({"event": "aria_thinking"})
+    await sonic.reconnect(prompt_override=summary_prompt)
+    await sonic.send_text_kickstart("Please begin.")
+    await sonic.wait_for_speech_done(timeout=30)
+    await sonic.wait_for_playback_done(timeout=15)
+    await ws_send({"event": "aria_listening"})
+
+    transcript = await sonic.wait_for_student_speech(timeout=120)
+    logger.info(f"Student response after desktop vision {task.get('task_id')}: '{transcript}'")
     return transcript
 
 
