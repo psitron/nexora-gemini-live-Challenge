@@ -163,19 +163,15 @@ class VisionLoop:
                 types.Content(
                     role="user",
                     parts=[
-                        types.Part(text=f"""You are a computer use agent automating a browser.
+                        types.Part(text=f"""GOAL: {goal}
 
-GOAL: {goal}
+You are automating a browser. Use click_at to click buttons and links. Use type_text_at to type text. Use navigate only if you need to go to a new URL.
 
-RULES:
-- Use navigate to go to URLs directly when possible.
-- Use click_at and type_text_at for interacting with page elements.
-- NEVER install software or run system commands.
-- All required software and services are already running.
-- When the goal is complete, respond with a text message summarizing what was done.
-- If you cannot complete the goal, respond with a text message explaining why.
+Look at the screenshot carefully. Identify the UI elements you need to interact with and click on them.
 
-Here is the current screenshot:"""),
+When done, respond with a short text summary.
+
+Current screenshot:"""),
                         types.Part.from_bytes(
                             data=screenshot,
                             mime_type="image/png",
@@ -196,15 +192,8 @@ Here is the current screenshot:"""),
                 ],
             }
 
-            # Add thinking for Gemini 3+
-            try:
-                model_version = float(self._model.split("-")[1])
-                if model_version >= 3:
-                    config_kwargs["thinking_config"] = types.ThinkingConfig(
-                        include_thoughts=True
-                    )
-            except (IndexError, ValueError):
-                pass
+            # Note: thinking_config disabled — it causes the model to
+            # over-analyze and navigate repeatedly instead of clicking
 
             config = types.GenerateContentConfig(**config_kwargs)
 
