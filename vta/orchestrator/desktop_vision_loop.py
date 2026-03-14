@@ -58,24 +58,11 @@ def _normalize_y(y: int) -> int:
 
 
 async def _take_screenshot(agent: AgentS3Client) -> Optional[bytes]:
-    """Take screenshot via Agent S3, resize to 1280x720 for API efficiency."""
+    """Take full 1920x1080 screenshot via Agent S3 (no resize — matches Google's reference)."""
     try:
         result = await agent.screenshot()
         if result.get("success") and result.get("image"):
-            raw = base64.b64decode(result["image"])
-            # Resize to reduce API payload (1920x1080 → 1280x720)
-            try:
-                from PIL import Image
-                import io
-                img = Image.open(io.BytesIO(raw))
-                img = img.resize((1280, 720), Image.LANCZOS)
-                buf = io.BytesIO()
-                img.save(buf, format="PNG", optimize=True)
-                resized = buf.getvalue()
-                logger.debug(f"Screenshot resized: {len(raw)} → {len(resized)} bytes")
-                return resized
-            except ImportError:
-                return raw
+            return base64.b64decode(result["image"])
         logger.warning(f"Screenshot failed: {result.get('error', 'unknown')}")
         return None
     except Exception as e:
@@ -277,18 +264,27 @@ Screenshot:"""),
                         contents=contents,
                         config=config,
                     ),
-                    timeout=30,
+                    timeout=60,
                 )
             except asyncio.TimeoutError:
-                logger.error("Gemini vision call timed out (30s)")
-                # Remove last content to prevent stale history
-                if len(contents) > 1:
-                    contents.pop()
+                logger.error("Gemini vision call timed out (60s)")
+                # Reset to just the initial content to prevent cascading errors
+                contents = [contents[0]]
+                # Take fresh screenshot for retry
+                fresh_ss = await _take_screenshot(agent)
+                if fresh_ss:
+                    contents[0] = types.Content(
+                        role="user",
+                        parts=[
+                            types.Part(text=f"GOAL: {goal}\n\nLook at this screenshot and decide the next action. Screenshot:"),
+                            types.Part(inline_data=types.Blob(data=fresh_ss, mime_type="image/png")),
+                        ],
+                    )
                 continue
             except Exception as e:
                 logger.error(f"Gemini vision call failed: {e}")
-                if len(contents) > 1:
-                    contents.pop()
+                # Reset history on error to prevent cascading 400s
+                contents = [contents[0]]
                 continue
 
             if not response.candidates or not response.candidates[0].content:
