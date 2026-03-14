@@ -2,13 +2,10 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import fs from 'fs'
 
-  // Enable HTTPS if cert files exist (GCE deployment)
-  const httpsConfig = fs.existsSync('/etc/ssl/vta/cert.pem')
-    ? {
-        key: fs.readFileSync('/etc/ssl/vta/key.pem'),
-        cert: fs.readFileSync('/etc/ssl/vta/cert.pem'),
-      }
-    : false
+  // HTTPS disabled — noVNC iframe requires same protocol (HTTP)
+  // Use Chrome flags for mic access on HTTP:
+  // chrome://flags/#unsafely-treat-insecure-origin-as-secure
+  const httpsConfig = false
 
   export default defineConfig({
     plugins: [react()],
