@@ -1,26 +1,19 @@
 """
-Desktop Vision Loop — Gemini Computer Use + Agent S3.
+Desktop Vision Loop — Gemini Vision + Agent S3.
 
-For desktop automation tasks (file manager, terminal UI, any GUI app).
-Unlike the browser VisionLoop (Playwright), this uses Agent S3's
-pyautogui/xdotool for screenshots and actions on the full Linux desktop.
+Uses Gemini as a vision planner (NOT Computer Use tool).
+Sends screenshot → AI returns JSON action → Agent S3 executes.
 
-Flow:
-  1. Take screenshot via Agent S3 (/action/screenshot)
-  2. Send screenshot to Gemini vision model
-  3. AI decides next action + coordinates
-  4. Execute via Agent S3 (click_position, type_text, keyboard, etc.)
-  5. Take new screenshot, send back as function response
-  6. Repeat until done or max steps
-
-Based on the old AWS VisionLoop architecture (vision planner + Agent S3),
-now powered by Gemini Computer Use.
+This avoids Computer Use API issues (FunctionResponse format,
+url requirement, timeouts) by using plain generateContent with images.
 """
 
 import asyncio
 import base64
+import json
 import logging
 import os
+import re
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -32,12 +25,35 @@ from vta.orchestrator.agent_s3_client import AgentS3Client
 logger = logging.getLogger(__name__)
 
 MAX_STEPS = 15
-
-# Screen resolution — matches Xvfb config
 SCREEN_WIDTH = 1920
 SCREEN_HEIGHT = 1080
-
 VISION_MODEL = "gemini-3-flash-preview"
+
+PLANNING_PROMPT = """You are a Linux desktop automation agent. Look at this screenshot ({w}x{h} pixels) and decide the next action.
+
+GOAL: {goal}
+
+{history}
+
+AVAILABLE ACTIONS:
+- "click_position" — Click at pixel coordinates. target="x,y".
+- "type_text" — Type text into the focused field. target=text to type.
+- "keyboard" — Press key/combo. target=key (e.g. "enter", "ctrl+c", "shift+enter").
+- "open_terminal" — Open XFCE terminal.
+- "run_command" — Type command in terminal and press Enter. target=command.
+- "wait" — Wait 2 seconds.
+- "done" — Goal complete. target=summary.
+- "fail" — Cannot complete. target=reason.
+
+RULES:
+1. LOOK at the screenshot. If a terminal is already open, do NOT open another.
+2. For click_position: provide pixel coordinates in the {w}x{h} image.
+3. Do EXACTLY what the goal says — no more, no less.
+4. As soon as the goal is achieved, return "done".
+5. NEVER install software.
+
+Return ONE JSON object only. No markdown, no explanation.
+Format: {{"action_type":"...","target":"...","description":"..."}}"""
 
 
 @dataclass
@@ -47,114 +63,81 @@ class DesktopVisionResult:
     message: str
 
 
-def _normalize_x(x: int) -> int:
-    """Convert normalized x (0-1000) to pixel coordinate."""
-    return int(x / 1000 * SCREEN_WIDTH)
-
-
-def _normalize_y(y: int) -> int:
-    """Convert normalized y (0-1000) to pixel coordinate."""
-    return int(y / 1000 * SCREEN_HEIGHT)
-
-
 async def _take_screenshot(agent: AgentS3Client) -> Optional[bytes]:
-    """Take full 1920x1080 screenshot via Agent S3 (no resize — matches Google's reference)."""
+    """Take full screenshot via Agent S3."""
     try:
         result = await agent.screenshot()
         if result.get("success") and result.get("image"):
             return base64.b64decode(result["image"])
-        logger.warning(f"Screenshot failed: {result.get('error', 'unknown')}")
         return None
     except Exception as e:
         logger.error(f"Screenshot error: {e}")
         return None
 
 
-async def _execute_desktop_action(
-    action_name: str,
-    action_args: dict,
-    agent: AgentS3Client,
-) -> bool:
-    """Execute a Gemini Computer Use action via Agent S3 (pyautogui/xdotool)."""
+def _parse_action(response_text: str) -> Optional[dict]:
+    """Parse JSON action from model response."""
+    text = response_text.strip()
+    text = re.sub(r'```json\s*', '', text)
+    text = re.sub(r'```\s*', '', text)
+    text = text.strip()
+    match = re.search(r'\{[^}]*\}', text, re.DOTALL)
+    if not match:
+        return None
     try:
-        if action_name == "click_at":
-            px_x = _normalize_x(action_args.get("x", 0))
-            px_y = _normalize_y(action_args.get("y", 0))
-            count = action_args.get("count", 1)
-            button = action_args.get("button", "left")
+        return json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return None
 
-            if button == "right":
-                result = await agent.run("right_click", {"x": px_x, "y": px_y})
-            elif count == 2:
-                result = await agent.run("double_click", {"x": px_x, "y": px_y})
-            else:
-                result = await agent.run("click_position", {"x": px_x, "y": px_y})
 
-        elif action_name == "type_text_at":
-            px_x = _normalize_x(action_args.get("x", 0))
-            px_y = _normalize_y(action_args.get("y", 0))
-            text = action_args.get("text", "")
+async def _execute_action(action: dict, agent: AgentS3Client) -> bool:
+    """Execute a parsed action via Agent S3."""
+    action_type = action.get("action_type", "").lower()
+    target = action.get("target", "")
 
-            await agent.run("click_position", {"x": px_x, "y": px_y})
-            await asyncio.sleep(0.3)
-            result = await agent.run("type_text", {"text": text})
+    try:
+        if action_type == "click_position":
+            parts = target.replace(" ", "").split(",")
+            x, y = int(parts[0]), int(parts[1])
+            result = await agent.run("click_position", {"x": x, "y": y})
 
-            if action_args.get("press_enter", False):
-                await asyncio.sleep(0.2)
-                await agent.run("keyboard", {"keys": "enter"})
+        elif action_type == "type_text":
+            result = await agent.run("type_text", {"text": target})
 
-        elif action_name == "key_combination":
-            keys = action_args.get("keys", "")
-            if isinstance(keys, list):
-                keys = "+".join(keys)
-            result = await agent.run("keyboard", {"keys": keys})
+        elif action_type == "keyboard":
+            result = await agent.run("keyboard", {"keys": target})
 
-        elif action_name == "hover_at":
-            # Agent S3 doesn't have hover — use click instead
-            px_x = _normalize_x(action_args.get("x", 0))
-            px_y = _normalize_y(action_args.get("y", 0))
-            result = await agent.run("click_position", {"x": px_x, "y": px_y})
+        elif action_type == "open_terminal":
+            result = await agent.run("open_terminal", {})
 
-        elif action_name == "scroll_at" or action_name == "scroll_document":
-            direction = action_args.get("direction", "down")
-            clicks = action_args.get("amount", 3)
-            result = await agent.run("scroll", {"direction": direction, "clicks": clicks})
+        elif action_type == "run_command":
+            result = await agent.run("run_command", {"cmd": target})
 
-        elif action_name == "navigate":
-            url = action_args.get("url", "")
-            result = await agent.run("run_command", {"cmd": f"firefox '{url}' &"})
+        elif action_type == "double_click":
+            parts = target.replace(" ", "").split(",")
+            x, y = int(parts[0]), int(parts[1])
+            result = await agent.run("double_click", {"x": x, "y": y})
 
-        elif action_name == "open_web_browser":
-            result = await agent.run("run_command", {"cmd": "firefox &"})
-
-        elif action_name == "wait_5_seconds":
-            await asyncio.sleep(5)
-            return True
-
-        elif action_name == "screenshot":
+        elif action_type == "wait":
+            await asyncio.sleep(2)
             return True
 
         else:
-            logger.warning(f"Unknown desktop action: '{action_name}'")
+            logger.warning(f"Unknown action: {action_type}")
             return False
 
-        success = result.get("result", {}).get("success", False)
-        if not success:
-            logger.warning(f"Desktop action '{action_name}' failed: {result}")
-        return success
+        return result.get("result", {}).get("success", False)
 
     except Exception as e:
-        logger.error(f"Desktop action error '{action_name}': {e}")
+        logger.error(f"Action error '{action_type}': {e}")
         return False
 
 
 class DesktopVisionLoop:
     """
-    Vision-driven desktop automation using Gemini + Agent S3.
-
-    Takes screenshots of the full Linux desktop via Agent S3,
-    sends them to Gemini for analysis, executes actions via
-    Agent S3's pyautogui/xdotool.
+    Vision planner for desktop automation.
+    Uses plain generateContent (not Computer Use tool) to avoid
+    FunctionResponse format issues.
     """
 
     def __init__(self):
@@ -169,251 +152,126 @@ class DesktopVisionLoop:
         ws_send: Callable,
         max_steps: int = MAX_STEPS,
     ) -> DesktopVisionResult:
-        """Run desktop vision loop until goal is complete or max steps."""
+        """Run desktop vision loop."""
         logger.info(f"DesktopVisionLoop starting — goal: {goal}")
         await ws_send({"event": "vision_loop_started", "goal": goal})
 
-        # Create screenshots directory
         screenshots_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "screenshots")
         os.makedirs(screenshots_dir, exist_ok=True)
 
+        previous_actions = []
         steps = 0
-
-        # Take initial screenshot
-        screenshot = await _take_screenshot(agent)
-        if not screenshot:
-            await asyncio.sleep(1)
-            screenshot = await _take_screenshot(agent)
-
-        if not screenshot:
-            msg = "Failed to take initial screenshot"
-            logger.error(msg)
-            await ws_send({"event": "vision_loop_failed", "steps": 0, "reason": msg})
-            return DesktopVisionResult(success=False, steps_executed=0, message=msg)
-
-        # Save initial screenshot
-        with open(os.path.join(screenshots_dir, "desktop_step_0.png"), "wb") as f:
-            f.write(screenshot)
-
-        # Build initial conversation
-        contents = [
-            types.Content(
-                role="user",
-                parts=[
-                    types.Part(text=f"""You are a Linux desktop automation agent. This is a screenshot of a Linux XFCE desktop, NOT a web browser.
-
-GOAL: {goal}
-
-ACTIONS AVAILABLE:
-- click_at(x, y) — click on desktop UI elements (coordinates 0-1000)
-- type_text_at(x, y, text, press_enter) — click a field and type text
-- key_combination(keys) — press keyboard shortcuts
-- wait_5_seconds() — wait for something to load
-
-DO NOT open a web browser. DO NOT use navigate. This is desktop automation only.
-To type a command in a terminal: use type_text_at on the terminal window.
-When the goal is achieved, respond with a text summary.
-
-Screenshot:"""),
-                    types.Part(
-                        inline_data=types.Blob(
-                            data=screenshot,
-                            mime_type="image/png",
-                        )
-                    ),
-                ],
-            ),
-        ]
-
-        # Configure Computer Use tool for DESKTOP (not browser)
-        # Exclude browser-specific functions to prevent AI from opening Firefox
-        computer_use_tool = types.Tool(
-            computer_use=types.ComputerUse(
-                environment=types.Environment.ENVIRONMENT_BROWSER,
-                excluded_predefined_functions=[
-                    "drag_and_drop",
-                    "open_web_browser",
-                    "navigate",
-                    "go_back",
-                    "go_forward",
-                    "search",
-                ],
-            ),
-        )
-
-        # Use highest available media resolution for Computer Use accuracy
-        try:
-            media_res = types.MediaResolution.MEDIA_RESOLUTION_ULTRA_HIGH
-        except AttributeError:
-            media_res = types.MediaResolution.MEDIA_RESOLUTION_HIGH
-
-        config = types.GenerateContentConfig(
-            tools=[computer_use_tool],
-            temperature=0.1,
-            media_resolution=media_res,
-        )
 
         while steps < max_steps:
             steps += 1
+
+            # Take screenshot
+            screenshot = await _take_screenshot(agent)
+            if not screenshot:
+                await asyncio.sleep(1)
+                screenshot = await _take_screenshot(agent)
+            if not screenshot:
+                logger.error("Screenshot failed")
+                continue
+
+            # Save screenshot
+            ss_name = f"desktop_step_{steps}.png"
+            with open(os.path.join(screenshots_dir, ss_name), "wb") as f:
+                f.write(screenshot)
+
+            # Build prompt
+            history = ""
+            if previous_actions:
+                recent = previous_actions[-6:]
+                history = "PREVIOUS ACTIONS:\n" + "\n".join(
+                    f"  {i+1}. {a}" for i, a in enumerate(recent)
+                )
+
+            prompt = PLANNING_PROMPT.format(
+                w=SCREEN_WIDTH, h=SCREEN_HEIGHT,
+                goal=goal, history=history,
+            )
+
             logger.info(f"DesktopVisionLoop step {steps}/{max_steps}")
 
+            # Call Gemini vision
             try:
                 response = await asyncio.wait_for(
                     self._client.aio.models.generate_content(
                         model=self._model,
-                        contents=contents,
-                        config=config,
+                        contents=[
+                            types.Content(
+                                role="user",
+                                parts=[
+                                    types.Part(text=prompt),
+                                    types.Part(
+                                        inline_data=types.Blob(
+                                            data=screenshot,
+                                            mime_type="image/png",
+                                        )
+                                    ),
+                                ],
+                            )
+                        ],
+                        config=types.GenerateContentConfig(
+                            max_output_tokens=256,
+                            temperature=0.1,
+                        ),
                     ),
-                    timeout=60,
+                    timeout=30,
                 )
             except asyncio.TimeoutError:
-                logger.error("Gemini vision call timed out (60s)")
-                # Reset to just the initial content to prevent cascading errors
-                contents = [contents[0]]
-                # Take fresh screenshot for retry
-                fresh_ss = await _take_screenshot(agent)
-                if fresh_ss:
-                    contents[0] = types.Content(
-                        role="user",
-                        parts=[
-                            types.Part(text=f"GOAL: {goal}\n\nLook at this screenshot and decide the next action. Screenshot:"),
-                            types.Part(inline_data=types.Blob(data=fresh_ss, mime_type="image/png")),
-                        ],
-                    )
+                logger.error("Gemini vision timed out (30s)")
                 continue
             except Exception as e:
-                logger.error(f"Gemini vision call failed: {e}")
-                # Reset history on error to prevent cascading 400s
-                contents = [contents[0]]
+                logger.error(f"Gemini vision error: {e}")
                 continue
 
-            if not response.candidates or not response.candidates[0].content:
-                logger.warning("Empty response from Gemini")
+            if not response.text:
+                logger.warning("Empty response")
                 continue
 
-            response_content = response.candidates[0].content
-            contents.append(response_content)
+            response_text = response.text.strip()
+            logger.info(f"AI response: {response_text[:200]}")
 
-            # Extract function calls
-            function_calls = [
-                part.function_call
-                for part in response_content.parts
-                if hasattr(part, "function_call") and part.function_call
-            ]
+            # Parse action
+            action = _parse_action(response_text)
+            if not action:
+                logger.warning(f"Could not parse action from: {response_text[:100]}")
+                continue
 
-            # Log parts
-            for i, part in enumerate(response_content.parts):
-                if hasattr(part, "function_call") and part.function_call:
-                    fc = part.function_call
-                    logger.info(f"  Part[{i}]: {fc.name}({dict(fc.args) if fc.args else {}})")
-                elif hasattr(part, "text") and part.text:
-                    logger.info(f"  Part[{i}]: text: {part.text[:200]}")
+            action_type = action.get("action_type", "").lower()
+            target = action.get("target", "")
+            description = action.get("description", action_type)
 
-            # No function calls = done
-            if not function_calls:
-                final_text = " ".join(
-                    part.text for part in response_content.parts
-                    if hasattr(part, "text") and part.text
-                    and not (hasattr(part, "thought") and part.thought)
-                )
-                if final_text:
-                    logger.info(f"DesktopVisionLoop complete: {final_text[:200]}")
-                    await ws_send({
-                        "event": "vision_loop_done",
-                        "steps": steps,
-                        "summary": final_text[:500],
-                    })
-                    return DesktopVisionResult(
-                        success=True,
-                        steps_executed=steps,
-                        message=final_text[:500],
-                    )
-                else:
-                    await ws_send({
-                        "event": "vision_loop_done",
-                        "steps": steps,
-                        "summary": "Task appears complete",
-                    })
-                    return DesktopVisionResult(
-                        success=True,
-                        steps_executed=steps,
-                        message="Task appears complete",
-                    )
+            logger.info(f"Action: {action_type} → {description}")
 
-            # Execute function calls via Agent S3
-            function_response_parts = []
+            await ws_send({
+                "event": "vision_loop_step",
+                "step": steps,
+                "action": action_type,
+                "description": description,
+            })
 
-            for fc in function_calls:
-                fc_args = dict(fc.args) if fc.args else {}
-                description = f"{fc.name}({fc_args})"
-                logger.info(f"Desktop action: {description}")
+            # Check terminal conditions
+            if action_type == "done":
+                logger.info(f"DesktopVisionLoop complete: {target}")
+                await ws_send({"event": "vision_loop_done", "steps": steps, "summary": target})
+                return DesktopVisionResult(success=True, steps_executed=steps, message=target)
 
-                await ws_send({
-                    "event": "vision_loop_step",
-                    "step": steps,
-                    "action": fc.name,
-                    "description": description,
-                })
+            if action_type == "fail":
+                logger.warning(f"DesktopVisionLoop failed: {target}")
+                await ws_send({"event": "vision_loop_failed", "steps": steps, "reason": target})
+                return DesktopVisionResult(success=False, steps_executed=steps, message=target)
 
-                # Execute via Agent S3
-                await _execute_desktop_action(fc.name, fc_args, agent)
+            # Execute action
+            success = await _execute_action(action, agent)
+            previous_actions.append(f"{action_type}({target}): {description}")
 
-                # Wait for UI to update
-                await asyncio.sleep(1.5)
-
-                # Take new screenshot
-                new_screenshot = await _take_screenshot(agent)
-
-                # Save screenshot
-                if new_screenshot:
-                    ss_name = f"desktop_step_{steps}_{fc.name}.png"
-                    with open(os.path.join(screenshots_dir, ss_name), "wb") as f:
-                        f.write(new_screenshot)
-                    logger.info(f"Saved: {ss_name}")
-
-                # Build function response with screenshot
-                if new_screenshot:
-                    function_response_parts.append(
-                        types.Part(
-                            function_response=types.FunctionResponse(
-                                name=fc.name,
-                                response={"url": "desktop://localhost", "status": "completed"},
-                            ),
-                        )
-                    )
-                    function_response_parts.append(
-                        types.Part(
-                            inline_data=types.Blob(
-                                data=new_screenshot,
-                                mime_type="image/png",
-                            )
-                        )
-                    )
-                else:
-                    function_response_parts.append(
-                        types.Part(
-                            function_response=types.FunctionResponse(
-                                name=fc.name,
-                                response={"url": "desktop://localhost", "status": "completed"},
-                            ),
-                        )
-                    )
-
-            # Append function responses
-            contents.append(
-                types.Content(role="user", parts=function_response_parts)
-            )
-            logger.info(f"State captured. History: {len(contents)} messages.")
+            # Wait for UI to update
+            await asyncio.sleep(1.5)
 
         # Max steps
-        logger.warning(f"DesktopVisionLoop max steps ({max_steps})")
-        await ws_send({
-            "event": "vision_loop_failed",
-            "steps": steps,
-            "reason": f"Reached max steps ({max_steps})",
-        })
-        return DesktopVisionResult(
-            success=False,
-            steps_executed=steps,
-            message=f"Did not complete within {max_steps} steps",
-        )
+        logger.warning(f"Max steps reached ({max_steps})")
+        await ws_send({"event": "vision_loop_failed", "steps": steps, "reason": "Max steps"})
+        return DesktopVisionResult(success=False, steps_executed=steps, message="Max steps reached")
