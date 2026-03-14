@@ -26,7 +26,11 @@ from vta.orchestrator.orchestrator import run_tutorial
 from vta.orchestrator.confirmation import ConfirmationManager
 from vta.orchestrator.execution_mode import get_execution_config
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s:%(name)s:%(message)s',
+    datefmt='%H:%M:%S',
+)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="VTA Task Orchestrator", version="3.0.0")

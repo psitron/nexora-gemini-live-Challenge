@@ -314,7 +314,11 @@ class GeminiLiveClient:
     async def wait_for_speech_done(self, timeout: float = 90):
         self._transcript_buffer.clear()
         self._transcript_event.clear()
-        self._speech_done.clear()
+        # Don't clear _speech_done if already set — speech may have finished
+        # before we got here (fast responses or session already closed)
+        if self._speech_done.is_set():
+            logger.info("Speech already done (detected before wait)")
+            return
         try:
             await asyncio.wait_for(self._speech_done.wait(), timeout=timeout)
         except asyncio.TimeoutError:
