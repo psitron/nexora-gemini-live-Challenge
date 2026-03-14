@@ -266,10 +266,56 @@ class DesktopVisionLoop:
 
             # Execute action
             success = await _execute_action(action, agent)
-            previous_actions.append(f"{action_type}({target}): {description}")
 
             # Wait for UI to update
             await asyncio.sleep(1.5)
+
+            # Reflection: take after screenshot and compare
+            after_screenshot = await _take_screenshot(agent)
+            reflection = ""
+            if after_screenshot and screenshot:
+                try:
+                    reflection_response = await asyncio.wait_for(
+                        self._client.aio.models.generate_content(
+                            model=self._model,
+                            contents=[
+                                types.Content(
+                                    role="user",
+                                    parts=[
+                                        types.Part(text="Compare these two screenshots. Did the action succeed? What changed?"),
+                                        types.Part(text="BEFORE:"),
+                                        types.Part(
+                                            inline_data=types.Blob(
+                                                data=screenshot,
+                                                mime_type="image/png",
+                                            )
+                                        ),
+                                        types.Part(text="AFTER:"),
+                                        types.Part(
+                                            inline_data=types.Blob(
+                                                data=after_screenshot,
+                                                mime_type="image/png",
+                                            )
+                                        ),
+                                    ],
+                                )
+                            ],
+                            config=types.GenerateContentConfig(
+                                max_output_tokens=256,
+                                temperature=0.1,
+                            ),
+                        ),
+                        timeout=15,
+                    )
+                    reflection = reflection_response.text.strip() if reflection_response.text else ""
+                    logger.info(f"Reflection: {reflection[:150]}")
+                except Exception as e:
+                    logger.warning(f"Reflection failed: {e}")
+
+            action_summary = f"{action_type}({target}): {description}"
+            if reflection:
+                action_summary += f" [reflection: {reflection}]"
+            previous_actions.append(action_summary)
 
         # Max steps
         logger.warning(f"Max steps reached ({max_steps})")

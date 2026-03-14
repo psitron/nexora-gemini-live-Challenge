@@ -108,7 +108,7 @@ async def run_tutorial(
     # Welcome — reconnect with welcome prompt, wait for student to say ready
     desc = tutorial.get('description', 'you will learn key concepts')
     welcome_prompt = (
-        f"Say these exact words and nothing else: "
+        f"Speak ONLY these exact words, nothing more. Do not elaborate, ask questions, or add anything: "
         f"Welcome to {tutorial['title']}. {desc}. "
         f"Say ready when you want to begin."
     )
@@ -170,7 +170,7 @@ async def run_tutorial(
             await handle_student_response(transcript, task, task_context, sonic, brain, ws_send)
 
     # Tutorial complete
-    complete_prompt = "You are ARIA. Tell the student they've completed the tutorial. Congratulate them briefly."
+    complete_prompt = "You are Nexora. Tell the student they've completed the tutorial. Congratulate them briefly."
     await sonic.reconnect(prompt_override=complete_prompt)
     await sonic.send_text_kickstart("Please begin.")
     await sonic.wait_for_speech_done(timeout=30)
@@ -271,7 +271,7 @@ async def execute_theory_task(
             explanation = f"This slide covers: {task.get('title', 'the topic')}."
 
         logger.info(f"[THEORY] Explanation ({len(explanation)} chars): {explanation[:200]}")
-        prompt = f"Say these exact words:\n\n{explanation}\n\n{closing}"
+        prompt = f"Speak ONLY these exact words, nothing more. Do not elaborate, ask questions, or add anything:\n\n{explanation}\n\n{closing}"
     else:
         # Fallback: use text context if no image available
         context = task.get("slide_context", "") or f"This slide covers: {task['title']}."
@@ -318,7 +318,7 @@ async def execute_practical_task(
         task_sonic_prompt = "Watch your screen."
 
     intro_prompt = (
-        f"Say these exact words and nothing else:\n\n{task_sonic_prompt}"
+        f"Speak ONLY these exact words, nothing more. Do not elaborate, ask questions, or add anything:\n\n{task_sonic_prompt}"
     )
 
     await sonic.reconnect(prompt_override=intro_prompt)
@@ -335,7 +335,7 @@ async def execute_practical_task(
         await ws_send({"event": "subtask_started", "subtask_id": subtask_id})
 
         step_narration_prompt = (
-            f"You are ARIA. Read ONLY the following words exactly as written. "
+            f"You are Nexora. Read ONLY the following words exactly as written. "
             f"Do not add, change, or expand:\n\n{sonic_prompt}"
         )
         await sonic.reconnect(prompt_override=step_narration_prompt)
@@ -353,7 +353,7 @@ async def execute_practical_task(
 
         if mode == ExecutionMode.FOLLOW_ALONG_PACED:
             step_prompt = (
-                f"You are ARIA. Read ONLY the following words exactly as written. "
+                f"You are Nexora. Read ONLY the following words exactly as written. "
                 f"Do not add, change, or expand:\n\n"
                 f"Your turn. Try it on your computer. Say ready when done."
             )
@@ -368,7 +368,7 @@ async def execute_practical_task(
     # 3. Summary narration — minimal, exact words only
     closing = "Any questions, or say ready to continue." if not is_last else ""
     summary_prompt = (
-        f"Say these exact words and nothing else:\n\n"
+        f"Speak ONLY these exact words, nothing more. Do not elaborate, ask questions, or add anything:\n\n"
         f"That completes the demonstration. {closing}"
     )
     await ws_send({"event": "aria_thinking"})
@@ -411,7 +411,7 @@ async def execute_desktop_vision_task(
     await ws_send({"event": "show_desktop"})
 
     # Intro narration
-    intro_prompt = f"Say these exact words and nothing else:\n\n{sonic_intro}"
+    intro_prompt = f"Speak ONLY these exact words, nothing more. Do not elaborate, ask questions, or add anything:\n\n{sonic_intro}"
     await sonic.reconnect(prompt_override=intro_prompt)
     await sonic.send_text_kickstart("Please begin.")
     await sonic.wait_for_speech_done(timeout=30)
@@ -439,7 +439,7 @@ async def execute_desktop_vision_task(
     # Summary
     closing = "Any questions, or say ready to continue." if not is_last else ""
     summary_prompt = (
-        f"Say these exact words and nothing else:\n\n"
+        f"Speak ONLY these exact words, nothing more. Do not elaborate, ask questions, or add anything:\n\n"
         f"That completes the demonstration. {closing}"
     )
     await ws_send({"event": "aria_thinking"})
@@ -462,8 +462,8 @@ async def execute_vision_task(
     is_last: bool = False,
 ) -> str:
     """
-    Vision-driven task: ARIA narrates the goal, the autonomous vision loop
-    executes it by watching the screen and deciding actions, then ARIA
+    Vision-driven task: Nexora narrates the goal, the autonomous vision loop
+    executes it by watching the screen and deciding actions, then Nexora
     narrates the outcome and waits for the student.
 
     Curriculum format:
@@ -481,7 +481,7 @@ async def execute_vision_task(
 
     # 1. Task intro narration
     intro_prompt = (
-        f"Say these exact words and nothing else:\n\n{sonic_intro}"
+        f"Speak ONLY these exact words, nothing more. Do not elaborate, ask questions, or add anything:\n\n{sonic_intro}"
     )
     await sonic.reconnect(prompt_override=intro_prompt)
     await sonic.send_text_kickstart("Please begin.")
@@ -500,7 +500,7 @@ async def execute_vision_task(
             await ws_send({"event": "subtask_started", "subtask_id": subtask_id})
 
             narration_prompt = (
-                f"You are ARIA. Read ONLY the following words exactly as written. "
+                f"You are Nexora. Read ONLY the following words exactly as written. "
                 f"Do not add, change, or expand:\n\n{subtask_prompt}"
             )
             await sonic.reconnect(prompt_override=narration_prompt)
@@ -522,7 +522,7 @@ async def execute_vision_task(
     # 3. Summary narration
     closing = "Any questions, or say ready to continue." if not is_last else ""
     summary_prompt = (
-        f"Say these exact words and nothing else:\n\n"
+        f"Speak ONLY these exact words, nothing more. Do not elaborate, ask questions, or add anything:\n\n"
         f"That completes the demonstration. {closing}"
     )
     await ws_send({"event": "aria_thinking"})
@@ -591,7 +591,7 @@ async def handle_student_response(
             question_text = intent.get("question_text") or transcript
             answer = await brain.answer_question(question_text, task_context)
             answer_prompt = (
-                f"You are ARIA. Answer this question: {answer}\n"
+                f"You are Nexora. Answer this question: {answer}\n"
                 f"Then ask: 'Any more questions or ready to move on?' Then listen."
             )
             await ws_send({"event": "aria_thinking"})
@@ -606,7 +606,7 @@ async def handle_student_response(
             if len(slide_context) > 1200:
                 slide_context = slide_context[:1200] + "..."
             repeat_prompt = (
-                f"You are ARIA. The student wants to hear this again. "
+                f"You are Nexora. The student wants to hear this again. "
                 f"Read the following content clearly:\n\n{slide_context}\n\n"
                 f"Then ask: 'Any questions or ready to move on?' Then listen."
             )
@@ -617,7 +617,7 @@ async def handle_student_response(
 
         elif action == "wait":
             logger.info("Student needs more time — waiting for them to speak")
-            wait_prompt = "You are ARIA. Say: 'Take your time.' Then listen."
+            wait_prompt = "You are Nexora. Say: 'Take your time.' Then listen."
             await sonic_speak(sonic, wait_prompt, timeout=20)
             await ws_send({"event": "aria_listening"})
             transcript = await sonic.wait_for_student_speech(timeout=0)  # no timeout

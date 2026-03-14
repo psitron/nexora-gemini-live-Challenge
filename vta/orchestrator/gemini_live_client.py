@@ -25,7 +25,7 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-ARIA_SYSTEM_PROMPT = """You are ARIA, a friendly voice tutor. Rules:
+ARIA_SYSTEM_PROMPT = """You are Nexora, a friendly voice tutor. Rules:
 1. Speak in English only.
 2. Say exactly what the user message tells you to say.
 3. Do not add extra content beyond what is requested.
@@ -54,6 +54,7 @@ class GeminiLiveClient:
 
         self._background_tasks: list = []
         self._audio_input_queue = asyncio.Queue()
+        self._precreated_session = None
 
         self._transcript_buffer: list = []
         self._transcript_event = asyncio.Event()
@@ -155,6 +156,37 @@ class GeminiLiveClient:
             except asyncio.QueueEmpty:
                 break
 
+    async def _precreate_listening_session(self):
+        """Pre-create a listening session in the background so it's ready
+        when wait_for_student_speech is called."""
+        try:
+            logger.info("Pre-creating listening session in background...")
+            config = types.LiveConnectConfig(
+                response_modalities=["AUDIO"],
+                speech_config=types.SpeechConfig(
+                    voice_config=types.VoiceConfig(
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                            voice_name="Kore",
+                        ),
+                    ),
+                ),
+                system_instruction=types.Content(
+                    parts=[types.Part(text=self._system_prompt or ARIA_SYSTEM_PROMPT)],
+                ),
+                input_audio_transcription=types.AudioTranscriptionConfig(),
+                output_audio_transcription=types.AudioTranscriptionConfig(),
+            )
+            ctx = self._genai_client.aio.live.connect(
+                model=GEMINI_LIVE_MODEL,
+                config=config,
+            )
+            session = await ctx.__aenter__()
+            self._precreated_session = (session, ctx)
+            logger.info("Pre-created listening session ready")
+        except Exception as e:
+            logger.error(f"Failed to pre-create listening session: {e}")
+            self._precreated_session = None
+
     async def reconnect(self, resume_context: str = "", prompt_override: str = "") -> bool:
         """Tear down and create fresh session with new instruction.
 
@@ -173,7 +205,15 @@ class GeminiLiveClient:
             self._pending_instruction = prompt
 
         await self._teardown()
-        return await self._create_session(self._system_prompt or ARIA_SYSTEM_PROMPT)
+
+        for attempt in range(1, 4):
+            success = await self._create_session(self._system_prompt or ARIA_SYSTEM_PROMPT)
+            if success:
+                return True
+            logger.warning(f"reconnect attempt {attempt}/3 failed — retrying in 1s")
+            await asyncio.sleep(1)
+        logger.error("reconnect failed after 3 attempts")
+        return False
 
     async def send_text_kickstart(self, text: str = "Please begin.", image_bytes: bytes = None):
         """Send instruction (with optional image) to make the model speak.
@@ -342,6 +382,7 @@ class GeminiLiveClient:
             if gap >= 1.5 and not self._speech_done.is_set():
                 logger.info(f"Speech done ({gap:.1f}s gap)")
                 self._speech_done.set()
+                asyncio.create_task(self._precreate_listening_session())
 
     # ── Background tasks ────────────────────────────────────────────────
 
@@ -425,7 +466,7 @@ class GeminiLiveClient:
                         model_text = sc.output_transcription.text.strip()
                         if model_text:
                             self._output_transcript_buffer.append(model_text)
-                            logger.info(f"[ARIA] {model_text}")
+                            logger.info(f"[Nexora] {model_text}")
 
             logger.info("Session ended (server closed)")
         except asyncio.CancelledError:

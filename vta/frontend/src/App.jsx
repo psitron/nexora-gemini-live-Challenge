@@ -18,12 +18,12 @@ const EXECUTION_MODES = [
   {
     value: 'demo_only',
     label: 'Demo Only',
-    description: 'Watch ARIA demonstrate. Great for first-time learners.',
+    description: 'Watch Nexora demonstrate. Great for first-time learners.',
   },
   {
     value: 'follow_along_realtime',
     label: 'Follow Along (Real-time)',
-    description: 'Do actions with ARIA in real-time. Fast-paced.',
+    description: 'Do actions with Nexora in real-time. Fast-paced.',
   },
   {
     value: 'follow_along_paced',
@@ -280,7 +280,7 @@ export default function App() {
   return (
     <div className="vta-app">
       <header className="vta-header">
-        <h1>Virtual Trainer Agent</h1>
+        <h1>✦ Nexora</h1>
         {tutorialTitle && <span className="tutorial-title">{tutorialTitle}</span>}
         {sessionId && (
           <>
@@ -294,8 +294,8 @@ export default function App() {
         )}
         {sessionId && ariaStatus !== 'idle' && (
           <span className={`aria-status aria-status-${ariaStatus}`}>
-            {ariaStatus === 'thinking' && '⏳ ARIA is preparing...'}
-            {ariaStatus === 'speaking' && '🔊 ARIA is speaking'}
+            {ariaStatus === 'thinking' && '⏳ Nexora is preparing...'}
+            {ariaStatus === 'speaking' && '🔊 Nexora is speaking'}
             {ariaStatus === 'listening' && '🎤 Your turn — speak now'}
           </span>
         )}
@@ -461,6 +461,18 @@ export default function App() {
           {sessionComplete && (
             <div className="session-complete">
               Tutorial Complete! Great job!
+              <button
+                className="back-to-courses-btn"
+                onClick={() => {
+                  setSessionId(null);
+                  setSessionComplete(false);
+                  setMessages([]);
+                  setTasks([]);
+                  setAriaStatus('idle');
+                }}
+              >
+                Back to Courses
+              </button>
             </div>
           )}
         </div>
