@@ -48,6 +48,12 @@ export default function App() {
   const [pdfUrl, setPdfUrl] = useState('');
   const [executionMode, setExecutionMode] = useState('demo_only');
   const [brainModel, setBrainModel] = useState('flash');
+  const [selectedTutorialId, setSelectedTutorialId] = useState('linux_basics_v1');
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [uploadedCurriculum, setUploadedCurriculum] = useState(null);
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [availableTutorials, setAvailableTutorials] = useState([]);
 
   // UI state
   const [messages, setMessages] = useState([]);
@@ -188,16 +194,48 @@ export default function App() {
     });
   }, [on, playAudioChunk, startMic, stopMic]);
 
+  // Fetch available tutorials on mount
+  useEffect(() => {
+    fetch('/api/tutorials')
+      .then(r => r.json())
+      .then(data => setAvailableTutorials(data.tutorials || []))
+      .catch(() => {});
+  }, []);
+
+  // Upload tutorial
+  const handleUpload = useCallback(async () => {
+    if (!uploadedFile) return;
+    setUploading(true);
+
+    const formData = new FormData();
+    formData.append('pdf', uploadedFile);
+    if (uploadedCurriculum) formData.append('curriculum', uploadedCurriculum);
+    formData.append('title', uploadTitle || uploadedFile.name.replace('.pdf', ''));
+
+    try {
+      const resp = await fetch('/api/upload-tutorial', { method: 'POST', body: formData });
+      const data = await resp.json();
+      setSelectedTutorialId(data.tutorial_id);
+      setAvailableTutorials(prev => [...prev, { tutorial_id: data.tutorial_id, title: data.title, task_count: data.task_count }]);
+      setUploadedFile(null);
+      setUploadedCurriculum(null);
+      setUploadTitle('');
+    } catch (err) {
+      console.error('Upload failed:', err);
+    }
+    setUploading(false);
+  }, [uploadedFile, uploadedCurriculum, uploadTitle]);
+
   // Start session
   const handleStartSession = useCallback(() => {
     send({
       event: 'start_session',
-      tutorial_id: 'linux_basics_v1',
+      tutorial_id: selectedTutorialId,
       student_id: 'student_1',
       execution_mode: executionMode,
       brain_model: brainModel,
     });
-  }, [send, executionMode, brainModel]);
+  }, [send, executionMode, brainModel, selectedTutorialId]);
 
   // Send confirmation
   const handleConfirm = useCallback((response) => {
@@ -273,6 +311,54 @@ export default function App() {
 
           {!sessionId && (
             <div className="start-session">
+              {/* Tutorial Selection / Upload */}
+              <div className="mode-selector">
+                <label className="mode-selector-label">Select Tutorial:</label>
+                {availableTutorials.map((t) => (
+                  <label key={t.tutorial_id} className="mode-option">
+                    <input
+                      type="radio"
+                      name="tutorialSelect"
+                      value={t.tutorial_id}
+                      checked={selectedTutorialId === t.tutorial_id}
+                      onChange={(e) => setSelectedTutorialId(e.target.value)}
+                    />
+                    <div className="mode-option-content">
+                      <span className="mode-option-label">{t.title}</span>
+                      <span className="mode-option-desc">{t.task_count} tasks</span>
+                    </div>
+                  </label>
+                ))}
+              </div>
+
+              <div className="upload-section">
+                <label className="mode-selector-label">Or Upload New Tutorial:</label>
+                <div className="upload-row">
+                  <input
+                    type="text"
+                    placeholder="Tutorial title"
+                    value={uploadTitle}
+                    onChange={(e) => setUploadTitle(e.target.value)}
+                    className="upload-input"
+                  />
+                </div>
+                <div className="upload-row">
+                  <label className="upload-label">
+                    Slides (PDF): <input type="file" accept=".pdf" onChange={(e) => setUploadedFile(e.target.files[0])} />
+                  </label>
+                </div>
+                <div className="upload-row">
+                  <label className="upload-label">
+                    Curriculum (JSON, optional): <input type="file" accept=".json" onChange={(e) => setUploadedCurriculum(e.target.files[0])} />
+                  </label>
+                </div>
+                {uploadedFile && (
+                  <button className="upload-btn" onClick={handleUpload} disabled={uploading}>
+                    {uploading ? 'Uploading...' : 'Upload Tutorial'}
+                  </button>
+                )}
+              </div>
+
               <div className="mode-selector">
                 <label className="mode-selector-label">Tutorial Mode:</label>
                 {EXECUTION_MODES.map((mode) => (

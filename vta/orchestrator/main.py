@@ -15,8 +15,9 @@ import os
 import uuid
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from vta.orchestrator.gemini_live_client import GeminiLiveClient, ARIA_SYSTEM_PROMPT
 from vta.orchestrator.brain_client import BrainClient
@@ -100,6 +101,101 @@ async def serve_pdf(pdf_path: str):
         logger.warning(f"PDF not found: {file_path}")
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=f"PDF not found: {pdf_path}")
+
+
+@app.post("/api/upload-tutorial")
+async def upload_tutorial(
+    pdf: UploadFile = File(...),
+    curriculum: UploadFile = File(None),
+    title: str = Form("Uploaded Tutorial"),
+):
+    """Upload a PDF and optional curriculum JSON to create a tutorial.
+
+    If no curriculum JSON is provided, creates a basic one with one slide per page.
+    Files are stored locally on the server.
+    """
+    import shutil
+
+    vta_dir = os.path.dirname(os.path.dirname(__file__))
+    pdfs_dir = os.path.join(vta_dir, "pdfs")
+    curriculum_dir = os.path.join(vta_dir, "curriculum")
+    os.makedirs(pdfs_dir, exist_ok=True)
+    os.makedirs(curriculum_dir, exist_ok=True)
+
+    # Generate unique tutorial ID
+    tutorial_id = f"tutorial_{uuid.uuid4().hex[:8]}"
+
+    # Save PDF
+    pdf_filename = f"{tutorial_id}.pdf"
+    pdf_path = os.path.join(pdfs_dir, pdf_filename)
+    with open(pdf_path, "wb") as f:
+        shutil.copyfileobj(pdf.file, f)
+    logger.info(f"Saved PDF: {pdf_path}")
+
+    # Save or generate curriculum
+    if curriculum and curriculum.filename:
+        # User provided curriculum JSON
+        curriculum_data = json.loads(await curriculum.read())
+        curriculum_data["tutorial_id"] = tutorial_id
+        curriculum_data["pdf_s3_key"] = pdf_filename
+        curriculum_data["pdf_url"] = ""
+    else:
+        # Auto-generate curriculum — use Gemini to analyze PDF and create tasks
+        # For now, create a simple placeholder curriculum
+        curriculum_data = {
+            "tutorial_id": tutorial_id,
+            "title": title,
+            "description": f"Tutorial: {title}",
+            "pdf_s3_key": pdf_filename,
+            "pdf_url": "",
+            "tasks": [
+                {
+                    "task_id": "T1",
+                    "type": "theory",
+                    "title": title,
+                    "slide_number": 1,
+                    "slide_context": f"Welcome to {title}. Follow along with the slides as ARIA guides you through the material.",
+                    "sonic_prompt": None,
+                    "subtasks": [],
+                }
+            ],
+        }
+
+    curriculum_path = os.path.join(curriculum_dir, f"{tutorial_id}.json")
+    with open(curriculum_path, "w") as f:
+        json.dump(curriculum_data, f, indent=2)
+    logger.info(f"Saved curriculum: {curriculum_path}")
+
+    return JSONResponse({
+        "tutorial_id": tutorial_id,
+        "title": curriculum_data.get("title", title),
+        "pdf_filename": pdf_filename,
+        "task_count": len(curriculum_data.get("tasks", [])),
+    })
+
+
+@app.get("/api/tutorials")
+async def list_tutorials():
+    """List all available tutorials."""
+    vta_dir = os.path.dirname(os.path.dirname(__file__))
+    curriculum_dir = os.path.join(vta_dir, "curriculum")
+
+    tutorials = []
+    if os.path.exists(curriculum_dir):
+        for fname in os.listdir(curriculum_dir):
+            if fname.endswith(".json"):
+                try:
+                    with open(os.path.join(curriculum_dir, fname)) as f:
+                        data = json.load(f)
+                    tutorials.append({
+                        "tutorial_id": data.get("tutorial_id", fname.replace(".json", "")),
+                        "title": data.get("title", fname),
+                        "task_count": len(data.get("tasks", [])),
+                    })
+                except Exception:
+                    pass
+
+    return {"tutorials": tutorials}
 
 
 @app.websocket("/ws")
