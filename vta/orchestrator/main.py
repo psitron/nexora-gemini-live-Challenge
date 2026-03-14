@@ -176,9 +176,10 @@ async def upload_tutorial(
 
 @app.get("/api/tutorials")
 async def list_tutorials():
-    """List all available tutorials."""
+    """List all available tutorials with details."""
     vta_dir = os.path.dirname(os.path.dirname(__file__))
     curriculum_dir = os.path.join(vta_dir, "curriculum")
+    pdfs_dir = os.path.join(vta_dir, "pdfs")
 
     tutorials = []
     if os.path.exists(curriculum_dir):
@@ -187,15 +188,59 @@ async def list_tutorials():
                 try:
                     with open(os.path.join(curriculum_dir, fname)) as f:
                         data = json.load(f)
+                    tid = data.get("tutorial_id", fname.replace(".json", ""))
+                    pdf_key = data.get("pdf_s3_key", "")
+                    has_pdf = bool(pdf_key and os.path.exists(os.path.join(pdfs_dir, pdf_key)))
                     tutorials.append({
-                        "tutorial_id": data.get("tutorial_id", fname.replace(".json", "")),
+                        "tutorial_id": tid,
                         "title": data.get("title", fname),
+                        "description": data.get("description", ""),
                         "task_count": len(data.get("tasks", [])),
+                        "has_pdf": has_pdf,
                     })
                 except Exception:
                     pass
 
     return {"tutorials": tutorials}
+
+
+@app.delete("/api/tutorials/{tutorial_id}")
+async def delete_tutorial(tutorial_id: str):
+    """Delete a tutorial and its PDF."""
+    vta_dir = os.path.dirname(os.path.dirname(__file__))
+    curriculum_dir = os.path.join(vta_dir, "curriculum")
+    pdfs_dir = os.path.join(vta_dir, "pdfs")
+
+    # Find and delete curriculum JSON
+    deleted = False
+    if os.path.exists(curriculum_dir):
+        for fname in os.listdir(curriculum_dir):
+            if fname.endswith(".json"):
+                filepath = os.path.join(curriculum_dir, fname)
+                try:
+                    with open(filepath) as f:
+                        data = json.load(f)
+                    if data.get("tutorial_id") == tutorial_id:
+                        # Delete associated PDF
+                        pdf_key = data.get("pdf_s3_key", "")
+                        if pdf_key:
+                            pdf_path = os.path.join(pdfs_dir, pdf_key)
+                            if os.path.exists(pdf_path):
+                                os.remove(pdf_path)
+                                logger.info(f"Deleted PDF: {pdf_path}")
+                        # Delete curriculum JSON
+                        os.remove(filepath)
+                        logger.info(f"Deleted curriculum: {filepath}")
+                        deleted = True
+                        break
+                except Exception:
+                    pass
+
+    if deleted:
+        return {"status": "deleted", "tutorial_id": tutorial_id}
+    else:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Tutorial not found: {tutorial_id}")
 
 
 @app.websocket("/ws")

@@ -48,12 +48,13 @@ export default function App() {
   const [pdfUrl, setPdfUrl] = useState('');
   const [executionMode, setExecutionMode] = useState('demo_only');
   const [brainModel, setBrainModel] = useState('flash');
-  const [selectedTutorialId, setSelectedTutorialId] = useState('linux_basics_v1');
+  const [selectedTutorialId, setSelectedTutorialId] = useState(null);
   const [uploadedFile, setUploadedFile] = useState(null);
   const [uploadedCurriculum, setUploadedCurriculum] = useState(null);
   const [uploadTitle, setUploadTitle] = useState('');
   const [uploading, setUploading] = useState(false);
   const [availableTutorials, setAvailableTutorials] = useState([]);
+  const [showUploadForm, setShowUploadForm] = useState(false);
 
   // UI state
   const [messages, setMessages] = useState([]);
@@ -226,6 +227,18 @@ export default function App() {
     setUploading(false);
   }, [uploadedFile, uploadedCurriculum, uploadTitle]);
 
+  // Delete tutorial
+  const handleDelete = useCallback(async (tutorialId) => {
+    if (!confirm(`Delete this course?`)) return;
+    try {
+      await fetch(`/api/tutorials/${tutorialId}`, { method: 'DELETE' });
+      setAvailableTutorials(prev => prev.filter(t => t.tutorial_id !== tutorialId));
+      if (selectedTutorialId === tutorialId) setSelectedTutorialId(null);
+    } catch (err) {
+      console.error('Delete failed:', err);
+    }
+  }, [selectedTutorialId]);
+
   // Start session
   const handleStartSession = useCallback(() => {
     send({
@@ -311,54 +324,76 @@ export default function App() {
 
           {!sessionId && (
             <div className="start-session">
-              {/* Tutorial Selection / Upload */}
-              <div className="mode-selector">
-                <label className="mode-selector-label">Select Tutorial:</label>
+              {/* Course List */}
+              <div className="course-list">
+                <label className="mode-selector-label">Your Courses</label>
+                {availableTutorials.length === 0 && (
+                  <div className="no-courses">No courses yet. Upload one below to get started.</div>
+                )}
                 {availableTutorials.map((t) => (
-                  <label key={t.tutorial_id} className="mode-option">
-                    <input
-                      type="radio"
-                      name="tutorialSelect"
-                      value={t.tutorial_id}
-                      checked={selectedTutorialId === t.tutorial_id}
-                      onChange={(e) => setSelectedTutorialId(e.target.value)}
-                    />
-                    <div className="mode-option-content">
-                      <span className="mode-option-label">{t.title}</span>
-                      <span className="mode-option-desc">{t.task_count} tasks</span>
+                  <div
+                    key={t.tutorial_id}
+                    className={`course-card ${selectedTutorialId === t.tutorial_id ? 'course-card-selected' : ''}`}
+                    onClick={() => setSelectedTutorialId(t.tutorial_id)}
+                  >
+                    <div className="course-card-info">
+                      <span className="course-card-title">{t.title}</span>
+                      <span className="course-card-meta">
+                        {t.task_count} tasks {t.has_pdf ? '| PDF' : ''}
+                      </span>
                     </div>
-                  </label>
+                    <button
+                      className="course-delete-btn"
+                      onClick={(e) => { e.stopPropagation(); handleDelete(t.tutorial_id); }}
+                      title="Delete course"
+                    >
+                      X
+                    </button>
+                  </div>
                 ))}
               </div>
 
-              <div className="upload-section">
-                <label className="mode-selector-label">Or Upload New Tutorial:</label>
-                <div className="upload-row">
-                  <input
-                    type="text"
-                    placeholder="Tutorial title"
-                    value={uploadTitle}
-                    onChange={(e) => setUploadTitle(e.target.value)}
-                    className="upload-input"
-                  />
-                </div>
-                <div className="upload-row">
-                  <label className="upload-label">
-                    Slides (PDF): <input type="file" accept=".pdf" onChange={(e) => setUploadedFile(e.target.files[0])} />
-                  </label>
-                </div>
-                <div className="upload-row">
-                  <label className="upload-label">
-                    Curriculum (JSON, optional): <input type="file" accept=".json" onChange={(e) => setUploadedCurriculum(e.target.files[0])} />
-                  </label>
-                </div>
-                {uploadedFile && (
-                  <button className="upload-btn" onClick={handleUpload} disabled={uploading}>
-                    {uploading ? 'Uploading...' : 'Upload Tutorial'}
-                  </button>
-                )}
-              </div>
+              {/* Upload New Course */}
+              <button
+                className="toggle-upload-btn"
+                onClick={() => setShowUploadForm(!showUploadForm)}
+              >
+                {showUploadForm ? 'Cancel' : '+ Add New Course'}
+              </button>
 
+              {showUploadForm && (
+                <div className="upload-section">
+                  <div className="upload-row">
+                    <input
+                      type="text"
+                      placeholder="Course title"
+                      value={uploadTitle}
+                      onChange={(e) => setUploadTitle(e.target.value)}
+                      className="upload-input"
+                    />
+                  </div>
+                  <div className="upload-row">
+                    <label className="upload-label">
+                      Slides (PDF):
+                      <input type="file" accept=".pdf" onChange={(e) => setUploadedFile(e.target.files[0])} />
+                    </label>
+                  </div>
+                  <div className="upload-row">
+                    <label className="upload-label">
+                      Curriculum (JSON, optional):
+                      <input type="file" accept=".json" onChange={(e) => setUploadedCurriculum(e.target.files[0])} />
+                    </label>
+                  </div>
+                  {uploadedFile && (
+                    <button className="upload-btn" onClick={handleUpload} disabled={uploading}>
+                      {uploading ? 'Uploading...' : 'Upload Course'}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Settings (only show when a course is selected) */}
+              {selectedTutorialId && (
               <div className="mode-selector">
                 <label className="mode-selector-label">Tutorial Mode:</label>
                 {EXECUTION_MODES.map((mode) => (
@@ -398,10 +433,11 @@ export default function App() {
               <button
                 className="start-btn"
                 onClick={handleStartSession}
-                disabled={!isConnected}
+                disabled={!isConnected || !selectedTutorialId}
               >
-                Start Tutorial
+                Start Course
               </button>
+              )}
             </div>
           )}
 
