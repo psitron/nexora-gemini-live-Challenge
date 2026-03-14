@@ -1,40 +1,36 @@
 """
-Autonomous Vision Loop for VTA — Gemini Computer Use.
+Autonomous Vision Loop for VTA — Gemini Computer Use + Playwright.
 
 When a curriculum task has type "vision_driven", this loop:
-  1. Takes a screenshot via Agent S3
+  1. Takes a screenshot via Playwright browser
   2. Sends screenshot + goal to Gemini Computer Use API
-  3. Parses returned function calls (click_at, type_text_at, etc.)
-  4. Executes actions via Agent S3
+  3. Parses returned function calls (click_at, type_text_at, navigate, etc.)
+  4. Executes actions via Playwright (precise browser control)
   5. Takes new screenshot and sends as FunctionResponse
   6. Repeats until model returns text (done) or max steps reached
 
 Based on Google's reference: generative-ai/gemini/computer-use/intro_computer_use.ipynb
+Uses Playwright for precise browser automation (Jupyter, web apps, etc.)
 """
 
 import asyncio
-import base64
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
 from google import genai
 from google.genai import types
-from google.genai.types import (
-    FunctionResponse as GFunctionResponse,
-    FunctionResponseBlob,
-)
-
-from vta.orchestrator.agent_s3_client import AgentS3Client
+from google.genai.types import FunctionResponse as GFunctionResponse
 
 logger = logging.getLogger(__name__)
 
-MAX_STEPS = 15
+MAX_STEPS = 20
 
-# Screen resolution — matches Xvfb config
-SCREEN_WIDTH = 1280
-SCREEN_HEIGHT = 800
+# Browser viewport size
+SCREEN_WIDTH = 1920
+SCREEN_HEIGHT = 1080
 
 # Gemini Computer Use model
 COMPUTER_USE_MODEL = "gemini-3-flash-preview"
@@ -57,321 +53,244 @@ class VisionLoopResult:
     message: str
 
 
-async def _take_screenshot_bytes(agent: AgentS3Client) -> Optional[bytes]:
-    """Take a screenshot via Agent S3 and return as raw PNG bytes."""
-    try:
-        result = await agent.screenshot()
-        if result.get("success") and result.get("image"):
-            return base64.b64decode(result["image"])
-        logger.warning(f"Screenshot failed: {result.get('error', 'unknown')}")
-        return None
-    except Exception as e:
-        logger.error(f"Screenshot error: {e}")
-        return None
-
-
-async def _execute_action(
-    function_call,
-    agent: AgentS3Client,
-) -> bool:
-    """Execute a Gemini Computer Use function call via Agent S3.
-
-    Handles the predefined functions: click_at, type_text_at, navigate,
-    open_web_browser, key_combination, scroll.
-    """
-    name = function_call.name
-    args = dict(function_call.args) if function_call.args else {}
-
-    try:
-        if name == "click_at":
-            px_x = _normalize_x(args.get("x", 0))
-            px_y = _normalize_y(args.get("y", 0))
-            button = args.get("button", "left")
-            count = args.get("count", 1)
-
-            if button == "right":
-                result = await agent.run("right_click", {"x": px_x, "y": px_y})
-            elif count == 2:
-                result = await agent.run("double_click", {"x": px_x, "y": px_y})
-            else:
-                result = await agent.run("click_position", {"x": px_x, "y": px_y})
-
-        elif name == "type_text_at":
-            px_x = _normalize_x(args.get("x", 0))
-            px_y = _normalize_y(args.get("y", 0))
-            text = args.get("text", "")
-
-            # Click at position first
-            await agent.run("click_position", {"x": px_x, "y": px_y})
-            await asyncio.sleep(0.3)
-
-            # Type the text
-            result = await agent.run("type_text", {"text": text})
-
-            # Press enter if requested
-            if args.get("press_enter", False):
-                await asyncio.sleep(0.2)
-                await agent.run("keyboard", {"keys": "enter"})
-
-        elif name == "key_combination":
-            keys = args.get("keys", "")
-            if isinstance(keys, list):
-                keys = "+".join(keys)
-            result = await agent.run("keyboard", {"keys": keys})
-
-        elif name == "scroll":
-            direction = "down" if args.get("direction", "down") == "down" else "up"
-            clicks = args.get("amount", 3)
-            result = await agent.run("scroll", {"direction": direction, "clicks": clicks})
-
-        elif name == "navigate":
-            url = args.get("url", "")
-            result = await agent.run("run_command", {"cmd": f"firefox '{url}' &"})
-
-        elif name == "open_web_browser":
-            result = await agent.run("run_command", {"cmd": "firefox &"})
-
-        elif name == "wait":
-            await asyncio.sleep(args.get("duration", 2))
-            return True
-
-        elif name == "screenshot":
-            return True
-
-        else:
-            logger.warning(f"Unknown Computer Use function: '{name}'")
-            return False
-
-        success = result.get("result", {}).get("success", False)
-        if not success:
-            logger.warning(f"Action '{name}' reported failure: {result}")
-        return success
-
-    except Exception as e:
-        logger.error(f"Action execution error for '{name}': {e}")
-        return False
-
-
 class VisionLoop:
     """
     Autonomous vision-driven execution loop for VTA.
 
-    Uses Gemini Computer Use API — single model handles planning,
-    grounding, and reflection in one unified loop.
-
-    Follows Google's reference implementation pattern:
-    screenshot → model → function_calls → execute → screenshot → repeat
+    Uses Gemini Computer Use API + Playwright for precise browser automation.
+    Follows Google's reference implementation pattern exactly.
     """
 
     def __init__(self):
         self._client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
         self._model = os.environ.get("GEMINI_COMPUTER_USE_MODEL", COMPUTER_USE_MODEL)
+        self._playwright = None
+        self._browser = None
         logger.info(f"VisionLoop initialized — model: {self._model}")
+
+    async def _ensure_browser(self):
+        """Start Playwright browser if not already running."""
+        if self._browser and self._browser.is_connected():
+            return
+
+        from playwright.async_api import async_playwright
+
+        self._playwright = await async_playwright().start()
+        self._browser = await self._playwright.chromium.launch(
+            headless=False,  # Show browser for demo visibility
+            args=["--start-maximized"],
+        )
+        logger.info("Playwright browser launched")
+
+    async def _new_page(self):
+        """Create a new browser page with configured viewport."""
+        await self._ensure_browser()
+        page = await self._browser.new_page()
+        await page.set_viewport_size({
+            "width": SCREEN_WIDTH,
+            "height": SCREEN_HEIGHT,
+        })
+        return page
 
     async def run(
         self,
         goal: str,
-        agent: AgentS3Client,
+        agent,  # AgentS3Client — kept for compatibility but Playwright is primary
         ws_send: Callable,
         max_steps: int = MAX_STEPS,
     ) -> VisionLoopResult:
         """
         Run the autonomous vision loop until the goal is complete or max steps reached.
+
+        Uses Playwright for all browser actions. Agent S3 is available as fallback
+        for non-browser desktop actions.
         """
         logger.info(f"VisionLoop starting — goal: {goal}")
         await ws_send({"event": "vision_loop_started", "goal": goal})
 
         steps = 0
+        page = await self._new_page()
 
-        # Take initial screenshot
-        screenshot_bytes = await _take_screenshot_bytes(agent)
-        if screenshot_bytes is None:
-            await asyncio.sleep(1)
-            screenshot_bytes = await _take_screenshot_bytes(agent)
+        try:
+            # Take initial screenshot
+            screenshot = await page.screenshot()
 
-        if screenshot_bytes is None:
-            msg = "Failed to take initial screenshot"
-            logger.error(msg)
-            await ws_send({"event": "vision_loop_failed", "steps": 0, "reason": msg})
-            return VisionLoopResult(success=False, steps_executed=0, message=msg)
-
-        # Build initial contents with goal + screenshot
-        contents = [
-            types.Content(
-                role="user",
-                parts=[
-                    types.Part(text=f"""You are a Linux desktop automation agent controlling an XFCE desktop.
+            # Build initial contents with goal + screenshot
+            contents = [
+                types.Content(
+                    role="user",
+                    parts=[
+                        types.Part(text=f"""You are a computer use agent automating a browser.
 
 GOAL: {goal}
 
 RULES:
-- To open an application: prefer running commands (e.g., open terminal, type command)
-- NEVER install software. Do NOT run pip install, apt install, or any package manager.
-- All required software is already installed.
+- Use navigate to go to URLs directly when possible.
+- Use click_at and type_text_at for interacting with page elements.
+- NEVER install software or run system commands.
+- All required software and services are already running.
 - When the goal is complete, respond with a text message summarizing what was done.
 - If you cannot complete the goal, respond with a text message explaining why.
 
-Here is the current screenshot of the desktop:"""),
-                    types.Part.from_bytes(
-                        data=screenshot_bytes,
-                        mime_type="image/png",
-                    ),
-                ],
-            ),
-        ]
-
-        # Configure Computer Use tool — use BROWSER environment
-        # (only option available) but exclude browser-specific functions
-        # since we're automating a full Linux desktop, not just a browser
-        computer_use_tool = types.Tool(
-            computer_use=types.ComputerUse(
-                environment=types.Environment.ENVIRONMENT_BROWSER,
-                excluded_predefined_functions=["drag_and_drop"],
-            ),
-        )
-
-        # Build config — add thinking for Gemini 3+
-        config_kwargs = {
-            "tools": [computer_use_tool],
-            "temperature": 0.1,
-        }
-        try:
-            model_version = float(self._model.split("-")[1])
-            if model_version >= 3:
-                config_kwargs["thinking_config"] = types.ThinkingConfig(
-                    include_thoughts=True
-                )
-        except (IndexError, ValueError):
-            pass
-
-        config = types.GenerateContentConfig(**config_kwargs)
-
-        while steps < max_steps:
-            steps += 1
-            logger.info(f"VisionLoop step {steps}/{max_steps}")
-
-            try:
-                response = await self._client.aio.models.generate_content(
-                    model=self._model,
-                    contents=contents,
-                    config=config,
-                )
-            except Exception as e:
-                logger.error(f"Gemini Computer Use call failed: {e}")
-                continue
-
-            if not response.candidates or not response.candidates[0].content:
-                logger.warning("Empty response from Gemini")
-                continue
-
-            response_content = response.candidates[0].content
-            contents.append(response_content)
-
-            # Extract function calls
-            function_calls = [
-                part.function_call
-                for part in response_content.parts
-                if hasattr(part, "function_call") and part.function_call
+Here is the current screenshot:"""),
+                        types.Part.from_bytes(
+                            data=screenshot,
+                            mime_type="image/png",
+                        ),
+                    ],
+                ),
             ]
 
-            # Log any thinking/reasoning
-            for part in response_content.parts:
-                if hasattr(part, "thought") and part.thought and part.text:
-                    logger.info(f"[GEMINI THOUGHT] {part.text[:200]}")
+            # Configure Computer Use tool
+            config_kwargs = {
+                "tools": [
+                    types.Tool(
+                        computer_use=types.ComputerUse(
+                            environment=types.Environment.ENVIRONMENT_BROWSER,
+                            excluded_predefined_functions=["drag_and_drop"],
+                        ),
+                    )
+                ],
+            }
 
-            if not function_calls:
-                # No function calls = model is done (returned text)
-                final_text = " ".join(
-                    part.text
+            # Add thinking for Gemini 3+
+            try:
+                model_version = float(self._model.split("-")[1])
+                if model_version >= 3:
+                    config_kwargs["thinking_config"] = types.ThinkingConfig(
+                        include_thoughts=True
+                    )
+            except (IndexError, ValueError):
+                pass
+
+            config = types.GenerateContentConfig(**config_kwargs)
+
+            while steps < max_steps:
+                steps += 1
+                logger.info(f"VisionLoop step {steps}/{max_steps}")
+
+                try:
+                    response = await self._client.aio.models.generate_content(
+                        model=self._model,
+                        contents=contents,
+                        config=config,
+                    )
+                except Exception as e:
+                    logger.error(f"Gemini Computer Use call failed: {e}")
+                    continue
+
+                if not response.candidates or not response.candidates[0].content:
+                    logger.warning("Empty response from Gemini")
+                    continue
+
+                response_content = response.candidates[0].content
+                contents.append(response_content)
+
+                # Extract function calls
+                function_calls = [
+                    part.function_call
                     for part in response_content.parts
-                    if hasattr(part, "text") and part.text
-                    and not (hasattr(part, "thought") and part.thought)
-                )
+                    if hasattr(part, "function_call") and part.function_call
+                ]
 
-                if final_text:
-                    logger.info(f"VisionLoop complete: {final_text[:200]}")
-                    await ws_send({
-                        "event": "vision_loop_done",
-                        "steps": steps,
-                        "summary": final_text[:500],
-                    })
-                    return VisionLoopResult(
-                        success=True,
-                        steps_executed=steps,
-                        message=final_text[:500],
-                    )
-                else:
-                    logger.warning("No function calls and no text — treating as done")
-                    await ws_send({
-                        "event": "vision_loop_done",
-                        "steps": steps,
-                        "summary": "Task appears complete",
-                    })
-                    return VisionLoopResult(
-                        success=True,
-                        steps_executed=steps,
-                        message="Task appears complete",
+                # Log thinking/reasoning
+                for part in response_content.parts:
+                    if hasattr(part, "thought") and part.thought and part.text:
+                        logger.info(f"[GEMINI THOUGHT] {part.text[:200]}")
+
+                # No function calls = model is done
+                if not function_calls:
+                    final_text = " ".join(
+                        part.text
+                        for part in response_content.parts
+                        if hasattr(part, "text") and part.text
+                        and not (hasattr(part, "thought") and part.thought)
                     )
 
-            # Execute function calls and build responses
-            function_response_parts = []
+                    if final_text:
+                        logger.info(f"VisionLoop complete: {final_text[:200]}")
+                        await ws_send({
+                            "event": "vision_loop_done",
+                            "steps": steps,
+                            "summary": final_text[:500],
+                        })
+                        return VisionLoopResult(
+                            success=True,
+                            steps_executed=steps,
+                            message=final_text[:500],
+                        )
+                    else:
+                        await ws_send({
+                            "event": "vision_loop_done",
+                            "steps": steps,
+                            "summary": "Task appears complete",
+                        })
+                        return VisionLoopResult(
+                            success=True,
+                            steps_executed=steps,
+                            message="Task appears complete",
+                        )
 
-            for fc in function_calls:
-                description = f"{fc.name}({dict(fc.args) if fc.args else {}})"
-                logger.info(f"Computer Use action: {description}")
+                # Execute function calls via Playwright
+                function_response_parts = []
 
-                await ws_send({
-                    "event": "vision_loop_step",
-                    "step": steps,
-                    "action": fc.name,
-                    "description": description,
-                })
+                for fc in function_calls:
+                    fc_args = dict(fc.args) if fc.args else {}
+                    description = f"{fc.name}({fc_args})"
+                    logger.info(f"Computer Use action: {description}")
 
-                # Execute the action
-                await _execute_action(fc, agent)
+                    await ws_send({
+                        "event": "vision_loop_step",
+                        "step": steps,
+                        "action": fc.name,
+                        "description": description,
+                    })
 
-                # Wait for UI to update
-                await asyncio.sleep(1.5)
+                    # Execute via Playwright
+                    try:
+                        await self._execute_playwright_action(fc.name, fc_args, page)
+                    except Exception as e:
+                        logger.error(f"Action '{fc.name}' failed: {e}")
 
-                # Take new screenshot
-                new_screenshot = await _take_screenshot_bytes(agent)
+                    # Wait for page to settle
+                    await asyncio.sleep(1.0)
 
-                # Build FunctionResponse with screenshot INSIDE (Google's exact pattern)
-                # Screenshot goes in FunctionResponse.parts as FunctionResponseBlob
-                if new_screenshot:
+                    # Take new screenshot
+                    new_screenshot = await page.screenshot()
+                    current_url = page.url
+
+                    # Build FunctionResponse with screenshot inside (Google's pattern)
                     function_response_parts.append(
                         types.Part(
                             function_response=GFunctionResponse(
                                 name=fc.name,
-                                response={"status": "completed"},
-                                parts=[
-                                    types.Part(
-                                        inline_data=FunctionResponseBlob(
-                                            mime_type="image/png",
-                                            data=new_screenshot,
-                                        )
-                                    )
-                                ],
+                                response={"url": current_url},
                             ),
                         )
                     )
-                else:
+                    # Screenshot as inline image after the function response
                     function_response_parts.append(
-                        types.Part(
-                            function_response=GFunctionResponse(
-                                name=fc.name,
-                                response={"status": "completed", "error": "screenshot failed"},
-                            ),
+                        types.Part.from_bytes(
+                            data=new_screenshot,
+                            mime_type="image/png",
                         )
                     )
 
-            # Append function responses to conversation
-            contents.append(
-                types.Content(
-                    role="user",
-                    parts=function_response_parts,
+                # Append function responses to conversation
+                contents.append(
+                    types.Content(
+                        role="user",
+                        parts=function_response_parts,
+                    )
                 )
-            )
+                logger.info(f"State captured. History: {len(contents)} messages.")
+
+        finally:
+            # Close the page but keep browser alive for reuse
+            try:
+                await page.close()
+            except Exception:
+                pass
 
         # Max steps reached
         logger.warning(f"VisionLoop reached max steps ({max_steps})")
@@ -385,3 +304,80 @@ Here is the current screenshot of the desktop:"""),
             steps_executed=steps,
             message=f"Did not complete within {max_steps} steps",
         )
+
+    async def _execute_playwright_action(self, name: str, args: dict, page):
+        """Execute a Computer Use action via Playwright."""
+
+        if name == "navigate":
+            url = args.get("url", "")
+            logger.info(f"Navigating to: {url}")
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+
+        elif name == "click_at":
+            px_x = _normalize_x(args.get("x", 0))
+            px_y = _normalize_y(args.get("y", 0))
+            logger.info(f"Clicking at ({px_x}, {px_y})")
+            await page.mouse.click(px_x, px_y)
+
+        elif name == "hover_at":
+            px_x = _normalize_x(args.get("x", 0))
+            px_y = _normalize_y(args.get("y", 0))
+            await page.mouse.move(px_x, px_y)
+
+        elif name == "type_text_at":
+            px_x = _normalize_x(args.get("x", 0))
+            px_y = _normalize_y(args.get("y", 0))
+            text = args.get("text", "")
+            logger.info(f"Typing '{text[:50]}' at ({px_x}, {px_y})")
+            await page.mouse.click(px_x, px_y)
+            await asyncio.sleep(0.1)
+            await page.keyboard.type(text)
+            if args.get("press_enter", False):
+                await page.keyboard.press("Enter")
+
+        elif name == "key_combination":
+            keys = args.get("keys", "")
+            if isinstance(keys, list):
+                keys = "+".join(keys)
+            logger.info(f"Key combo: {keys}")
+            await page.keyboard.press(keys)
+
+        elif name == "scroll_at" or name == "scroll_document":
+            px_x = _normalize_x(args.get("x", SCREEN_WIDTH // 2))
+            px_y = _normalize_y(args.get("y", SCREEN_HEIGHT // 2))
+            direction = args.get("direction", "down")
+            delta = 300 if direction == "down" else -300
+            await page.mouse.wheel(0, delta)
+
+        elif name == "open_web_browser":
+            logger.info("Browser already open")
+
+        elif name == "go_back":
+            await page.go_back()
+
+        elif name == "go_forward":
+            await page.go_forward()
+
+        elif name == "search":
+            query = args.get("query", "")
+            await page.goto(f"https://www.google.com/search?q={query}")
+
+        elif name == "wait_5_seconds":
+            await asyncio.sleep(5)
+
+        else:
+            logger.warning(f"Unknown action: '{name}'")
+
+    async def close(self):
+        """Clean up Playwright resources."""
+        if self._browser:
+            try:
+                await self._browser.close()
+            except Exception:
+                pass
+        if self._playwright:
+            try:
+                await self._playwright.stop()
+            except Exception:
+                pass
+        logger.info("VisionLoop Playwright resources cleaned up")

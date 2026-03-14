@@ -11,6 +11,9 @@ python-multipart>=0.0.9
 # NOTE: google-genai brings in httpx>=0.28.1 and websockets>=13.0
 google-genai>=1.0.0
 
+# Browser automation for Gemini Computer Use
+playwright>=1.50.0
+
 # Image processing (Linux deployment only — no prebuilt wheel for Python 3.14 on Windows)
 # Pillow>=11.0.0
 
