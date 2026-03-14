@@ -1,291 +1,237 @@
-# VTA (Virtual Trainer Agent)
+# VTA — Virtual Trainer Agent
 
-Voice-driven AI tutoring platform with live desktop demonstrations powered by Amazon Nova Sonic and Agent S3.
+**AI-powered voice tutor that teaches Linux commands through real-time conversation and live desktop automation.**
+
+Built for the [Gemini Live Agent Challenge](https://googleai.devpost.com/) hackathon.
+
+**Category: Live Agents** — Real-time voice interaction with vision-enabled desktop tutoring.
+
+---
+
+## What It Does
+
+VTA is a voice-first AI tutor that:
+
+1. **Speaks naturally** — Uses Gemini Live API for real-time bidirectional voice conversation
+2. **Understands the student** — Gemini 3 Flash classifies intent (questions, ready, repeat, wait)
+3. **Automates the desktop** — Gemini Computer Use + Playwright navigates browsers, opens apps, runs commands while the student watches via noVNC
+4. **Adapts to the learner** — Students can ask questions, request repeats, or skip at any point
+
+### Demo Flow
+
+```
+Student opens browser → Connects to VTA
+  → ARIA (voice tutor) welcomes student
+  → Theory: ARIA explains Linux concepts via voice
+  → Student says "ready" to advance, "repeat" to hear again, or asks questions
+  → Practical: ARIA demonstrates commands on a live Linux desktop
+  → Student watches via noVNC as the agent opens terminal, runs ls, pwd, etc.
+  → Vision: Gemini Computer Use navigates Jupyter Notebook, creates files
+  → Tutorial complete
+```
+
+---
 
 ## Architecture
 
 ```
-Student Browser (React)
-  ↓ WebSocket
-EC2 Ubuntu 22.04
-  ├─ nginx (reverse proxy)
-  ├─ Task Orchestrator (FastAPI, port 5000)
-  │   ├─ Nova Sonic Client (bidirectional audio)
-  │   ├─ Curriculum Manager (DynamoDB)
-  │   └─ Agent S3 HTTP Client
-  ├─ Agent S3 REST API (FastAPI, port 5001)
-  │   ├─ Linux-adapted actions (xdotool + pyautogui)
-  │   └─ Reflex Verifier (xdotool checks)
-  └─ Virtual Desktop: Xvfb → XFCE → x11vnc → websockify → noVNC
+┌─────────────────────────────────────────────────────────┐
+│                    Student Browser                       │
+│  ┌──────────┐  ┌──────────────┐  ┌───────────────────┐  │
+│  │ React UI │  │ Audio Stream │  │ noVNC Desktop View │  │
+│  └────┬─────┘  └──────┬───────┘  └────────┬──────────┘  │
+│       │               │                   │              │
+│       └───────────────┼───────────────────┘              │
+│                       │ WebSocket                        │
+└───────────────────────┼──────────────────────────────────┘
+                        │
+            ┌───────────▼───────────┐
+            │   FastAPI Orchestrator │ (port 5000)
+            │                       │
+            │  ┌─────────────────┐  │
+            │  │ GeminiLiveClient│──┼──→ Gemini Live API (voice)
+            │  │  (voice I/O)    │  │    gemini-2.5-flash-native-audio
+            │  └─────────────────┘  │
+            │                       │
+            │  ┌─────────────────┐  │
+            │  │   BrainClient   │──┼──→ Gemini 3 Flash (text)
+            │  │  (intent + Q&A) │  │    gemini-3-flash-preview
+            │  └─────────────────┘  │
+            │                       │
+            │  ┌─────────────────┐  │
+            │  │   VisionLoop    │──┼──→ Gemini Computer Use (vision)
+            │  │  (Playwright)   │  │    gemini-3-flash-preview
+            │  └────────┬────────┘  │
+            │           │           │
+            └───────────┼───────────┘
+                        │
+            ┌───────────▼───────────┐
+            │   GCE Linux Desktop   │
+            │  Xvfb + XFCE + x11vnc │
+            │  Playwright Chromium   │
+            │  Agent S3 (port 5001)  │
+            └───────────────────────┘
+                    │
+                    └──→ Google Compute Engine (GCP)
 ```
 
-## Quick Start (EC2 Ubuntu 22.04)
+---
 
-### 1. Initial Setup
+## Tech Stack
+
+| Component | Technology |
+|---|---|
+| Voice I/O | Gemini Live API (`gemini-2.5-flash-native-audio`) |
+| Intent Classification + Q&A | Gemini 3 Flash (`gemini-3-flash-preview`) |
+| Desktop Automation | Gemini Computer Use + Playwright |
+| Backend | FastAPI + WebSocket (Python) |
+| Frontend | React + Vite |
+| Desktop Viewer | noVNC (WebSocket → VNC) |
+| SDK | Google GenAI SDK (`google-genai`) |
+| Cloud | Google Compute Engine (GCE) |
+
+---
+
+## Quick Start (Local Development)
+
+### Prerequisites
+- Python 3.10+
+- Node.js 18+
+- [Gemini API key](https://aistudio.google.com/apikey)
+
+### 1. Clone and setup
 
 ```bash
-# Clone repo
-git clone <your-repo> /opt/vta
-cd /opt/vta/vta
+git clone https://github.com/YOUR_REPO/ui-agent.git
+cd ui-agent
+python -m venv .venv
 
-# Run system setup
-sudo bash scripts/ec2_setup.sh
+# Windows
+.venv\Scripts\activate
+# Linux/Mac
+source .venv/bin/activate
 
-# Configure .env
-cp .env.example .env
-nano .env  # Add AWS credentials, KB_ID, etc.
+pip install -r vta/requirements.txt
+playwright install chromium
 ```
 
-### 2. Configure Services
+### 2. Configure
 
 ```bash
-# Set up systemd services + nginx
-sudo bash scripts/configure_services.sh
-
-# Create DynamoDB tables
-bash scripts/create_tables.sh us-east-1
+cp vta/.env.example vta/.env
+# Edit vta/.env and set GEMINI_API_KEY=your-key
 ```
 
-### 3. Deploy
+### 3. Start backend (Terminal 1)
 
 ```bash
-# Build frontend + start services
-bash scripts/deploy.sh --local
+# Windows PowerShell
+$env:GEMINI_API_KEY="your-key"
+$env:VTA_LOCAL_CURRICULUM="true"
+$env:VTA_LOCAL_STATE="true"
+$env:PYTHONPATH="."
+
+python -m uvicorn vta.orchestrator.main:app --host 0.0.0.0 --port 5000
+```
+
+### 4. Start frontend (Terminal 2)
+
+```bash
+cd vta/frontend
+npm install
+npm run dev
+```
+
+### 5. Open browser
+
+Go to `http://localhost:5173`, select **Demo Only** + **Gemini Flash**, click **Start Tutorial**.
+
+> Note: Voice and theory tasks work on any OS. Desktop automation (practical/vision tasks) requires Linux with X display, or GCE deployment.
+
+---
+
+## GCE Deployment (Full Experience)
+
+### Prerequisites
+- [gcloud CLI](https://cloud.google.com/sdk/docs/install) installed and authenticated
+- GCP project with billing enabled
+
+### 1. Create GCE instance
+
+```bash
+gcloud config set project YOUR_PROJECT_ID
+bash vta/scripts/deploy_gcp.sh
+```
+
+### 2. SSH and setup
+
+```bash
+gcloud compute ssh vta-agent --zone=us-central1-a
+
+# On the instance:
+git clone https://github.com/YOUR_REPO/ui-agent.git
+cd ui-agent
+bash vta/scripts/gce_setup.sh
+```
+
+### 3. Start services
+
+```bash
+export GEMINI_API_KEY='your-key'
+bash vta/scripts/start_services.sh
 ```
 
 ### 4. Access
 
-```
-http://<your-ec2-ip>
-```
+- **Frontend:** `http://EXTERNAL_IP:3000`
+- **noVNC Desktop:** `http://EXTERNAL_IP:6080/vnc.html`
+- **API Health:** `http://EXTERNAL_IP:5000/health`
 
-## Development (Local)
+---
 
-### Prerequisites
+## Hackathon Requirements Checklist
 
-- Python 3.11+
-- Node.js 20+
-- Xvfb (Linux) or Windows desktop
+| Requirement | Status |
+|---|---|
+| Gemini model | Gemini 3 Flash + Gemini 2.5 Flash Native Audio |
+| Google GenAI SDK | `google-genai` throughout |
+| Google Cloud service | Google Compute Engine |
+| Backend on GCP | Deployed on GCE |
+| Multimodal I/O | Voice in/out + screenshot vision + browser actions |
+| Real-time interaction | Bidirectional voice via Gemini Live API |
+| Spin-up instructions | This README |
+| Automated deployment | `deploy_gcp.sh` + `gce_setup.sh` + `start_services.sh` |
 
-### Setup
+---
 
-```bash
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Install frontend dependencies
-cd frontend
-npm install
-cd ..
-
-# Configure environment
-cp .env.example .env
-# Edit .env with VTA_LOCAL_CURRICULUM=true for local dev
-```
-
-### Run Services
-
-```bash
-# Terminal 1: Agent S3
-export DISPLAY=:1  # Linux only
-python -m vta.agent_s3.server
-
-# Terminal 2: Orchestrator
-python -m vta.orchestrator.main
-
-# Terminal 3: React frontend
-cd frontend
-npm run dev
-```
-
-### Access
-
-```
-http://localhost:3000
-```
-
-## Curriculum Management
-
-### Seed Tutorial
-
-```bash
-python -m vta.curriculum.seed_curriculum --file curriculum/linux_basics.json --region us-east-1
-```
-
-### Curriculum Structure
-
-See `curriculum/linux_basics.json` for format:
-
-- **Theory tasks**: `slide_number` + `slide_context` (Sonic speaks naturally)
-- **Practical tasks**: `sonic_prompt` + `subtasks[]` (each with `action`, `params`, `reflex_check`)
-
-## Architecture Details
-
-### Nova Sonic Integration
-
-- **Bidirectional streaming** via `aws_sdk_bedrock_runtime`
-- **Tools**: `show_slide`, `run_ui_action`, `signal_task_complete`, `signal_student_confirmation`, `query_knowledge_base`
-- **Audio**: 16kHz input (student) → 24kHz output (Sonic)
-- **System prompt**: Full ARIA master prompt in `s2s_events.py`
-
-### Agent S3 Actions
-
-| Action | Description | Linux Implementation |
-|--------|-------------|---------------------|
-| `open_terminal` | Open terminal | `xfce4-terminal` via subprocess |
-| `run_command` | Execute command | `xdotool type` + `xdotool key Return` |
-| `click_text` | Click on text | Grounding agent → `pyautogui.click()` |
-| `type_text` | Type text | `xdotool type` |
-| `keyboard` | Press keys | `xdotool key` |
-| `screenshot` | Capture screen | `mss` on DISPLAY=:1 |
-
-### Reflex Verification
-
-- **`terminal_visible`**: `xdotool search --name terminal`
-- **`command_output_visible`**: Same as terminal_visible (proxy)
-- **Retry once** on failure before marking failed
-
-### Student Confirmation Flow
-
-After every task:
-1. Sonic asks: "Ready to move on?"
-2. Student responds: **Yes** (advance) / **No** (wait) / **Repeat** (replay task)
-3. Supports both button clicks and voice detection
-
-## File Structure
+## Project Structure
 
 ```
 vta/
-├── agent_s3/              # Agent S3 REST API (port 5001)
-│   ├── linux_adaptations.py   # Xvfb patches
-│   ├── reflex_verifier.py     # xdotool checks
-│   ├── actions.py             # 10 Linux actions
-│   └── server.py              # FastAPI endpoints
-├── orchestrator/          # Task Orchestrator (port 5000)
-│   ├── s2s_events.py          # Nova Sonic event builders
-│   ├── sonic_client.py        # Bidirectional streaming
-│   ├── tool_handler.py        # Tool call dispatcher
-│   ├── agent_s3_client.py     # HTTP client for Agent S3
-│   ├── orchestrator.py        # Core execution loop
-│   ├── curriculum_manager.py  # DynamoDB curriculum loader
-│   ├── session_state.py       # State tracking
-│   ├── confirmation.py        # Yes/No/Repeat flow
-│   ├── kb_client.py           # Bedrock KB (RAG)
-│   └── main.py                # WebSocket server
-├── curriculum/            # Tutorial definitions
-│   ├── linux_basics.json      # Sample curriculum
-│   └── seed_curriculum.py     # DynamoDB seeder
-├── frontend/              # React SPA
-│   ├── src/
-│   │   ├── components/        # UI components
-│   │   ├── hooks/             # WebSocket, audio, noVNC
-│   │   ├── App.jsx            # Main layout
-│   │   └── styles/App.css     # Styling
-│   ├── package.json
-│   └── vite.config.js
-└── scripts/               # Deployment
-    ├── ec2_setup.sh           # System packages
-    ├── configure_services.sh  # systemd services
-    ├── create_tables.sh       # DynamoDB tables
-    └── deploy.sh              # Build + deploy
+├── orchestrator/
+│   ├── main.py                 # FastAPI WebSocket server
+│   ├── orchestrator.py         # Tutorial execution loop
+│   ├── gemini_live_client.py   # Gemini Live API voice client
+│   ├── brain_client.py         # Gemini 3 Flash intent + Q&A
+│   ├── vision_loop.py          # Gemini Computer Use + Playwright
+│   └── agent_s3_client.py      # Desktop action execution
+├── agent_s3/
+│   ├── server.py               # Desktop automation REST API
+│   └── actions.py              # pyautogui/xdotool wrappers
+├── frontend/
+│   ├── src/App.jsx             # React UI
+│   └── src/hooks/              # Audio, WebSocket, noVNC hooks
+├── curriculum/
+│   └── linux_basics.json       # Tutorial content
+├── scripts/
+│   ├── deploy_gcp.sh           # Create GCE instance
+│   ├── gce_setup.sh            # Install dependencies on GCE
+│   └── start_services.sh       # Start all services
+└── requirements.txt
 ```
 
-## DynamoDB Tables
-
-### `vta_curriculum`
-- **PK**: `tutorial_id`
-- **SK**: `task_id` (or `__meta__` for metadata)
-
-### `vta_session_state`
-- **PK**: `session_id`
-- **SK**: `task_sort_key` (format: `T1#null` or `T3#T3.1`)
-- **Status**: `pending` → `running` → `awaiting_confirmation` → `completed`
-
-### `vta_sessions`
-- **PK**: `session_id`
-- Metadata: `tutorial_id`, `student_id`, `started_at`, `status`
-
-## Troubleshooting
-
-### Agent S3 not connecting to desktop
-
-```bash
-# Check Xvfb is running
-ps aux | grep Xvfb
-
-# Restart Xvfb
-sudo systemctl restart vta-xvfb
-```
-
-### Nova Sonic timeout
-
-```bash
-# Check AWS credentials
-aws sts get-caller-identity
-
-# Check model access
-aws bedrock list-foundation-models --region us-east-1 --query "modelSummaries[?contains(modelId, 'sonic')]"
-```
-
-### DynamoDB access denied
-
-```bash
-# Attach policy to EC2 IAM role:
-# - AmazonDynamoDBFullAccess
-# - AmazonBedrockFullAccess
-```
-
-### Frontend not loading
-
-```bash
-# Check nginx
-sudo nginx -t
-sudo systemctl status nginx
-
-# Rebuild frontend
-cd /opt/vta/vta/frontend
-npm run build
-```
-
-## Testing
-
-### Test Agent S3
-
-```bash
-curl http://localhost:5001/health
-curl -X POST http://localhost:5001/action/screenshot
-```
-
-### Test Orchestrator
-
-```bash
-# WebSocket test (requires wscat)
-npm install -g wscat
-wscat -c ws://localhost:5000/ws
-> {"event": "start_session", "tutorial_id": "linux_basics_v1"}
-```
-
-### Test Virtual Desktop
-
-```bash
-# VNC viewer (local test)
-vncviewer localhost:5900
-
-# Or via browser (noVNC)
-# http://localhost:6080/vnc.html
-```
-
-## Production Checklist
-
-- [ ] EC2 security group: ports 80, 443, 22 only
-- [ ] IAM role with DynamoDB + Bedrock permissions
-- [ ] DynamoDB tables created in correct region
-- [ ] Curriculum seeded
-- [ ] SSL certificate (HTTPS) via Let's Encrypt
-- [ ] CloudWatch logging enabled
-- [ ] Backup strategy for DynamoDB
-- [ ] Cost monitoring alerts
+---
 
 ## License
 
-See main project LICENSE.
+MIT
