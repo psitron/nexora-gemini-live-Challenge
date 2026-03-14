@@ -350,7 +350,7 @@ Current screenshot:"""),
                         types.Part(
                             function_response=types.FunctionResponse(
                                 name=fc.name,
-                                response={"status": "completed"},
+                                response={"url": "desktop://localhost", "status": "completed"},
                             ),
                         )
                     )
@@ -367,7 +367,7 @@ Current screenshot:"""),
                         types.Part(
                             function_response=types.FunctionResponse(
                                 name=fc.name,
-                                response={"status": "completed", "note": "screenshot failed"},
+                                response={"url": "desktop://localhost", "status": "completed"},
                             ),
                         )
                     )
