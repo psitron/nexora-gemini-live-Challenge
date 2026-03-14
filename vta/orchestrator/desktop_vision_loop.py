@@ -58,11 +58,24 @@ def _normalize_y(y: int) -> int:
 
 
 async def _take_screenshot(agent: AgentS3Client) -> Optional[bytes]:
-    """Take screenshot via Agent S3, return raw PNG bytes."""
+    """Take screenshot via Agent S3, resize to 1280x720 for API efficiency."""
     try:
         result = await agent.screenshot()
         if result.get("success") and result.get("image"):
-            return base64.b64decode(result["image"])
+            raw = base64.b64decode(result["image"])
+            # Resize to reduce API payload (1920x1080 → 1280x720)
+            try:
+                from PIL import Image
+                import io
+                img = Image.open(io.BytesIO(raw))
+                img = img.resize((1280, 720), Image.LANCZOS)
+                buf = io.BytesIO()
+                img.save(buf, format="PNG", optimize=True)
+                resized = buf.getvalue()
+                logger.debug(f"Screenshot resized: {len(raw)} → {len(resized)} bytes")
+                return resized
+            except ImportError:
+                return raw
         logger.warning(f"Screenshot failed: {result.get('error', 'unknown')}")
         return None
     except Exception as e:
@@ -251,13 +264,24 @@ Current screenshot:"""),
             logger.info(f"DesktopVisionLoop step {steps}/{max_steps}")
 
             try:
-                response = await self._client.aio.models.generate_content(
-                    model=self._model,
-                    contents=contents,
-                    config=config,
+                response = await asyncio.wait_for(
+                    self._client.aio.models.generate_content(
+                        model=self._model,
+                        contents=contents,
+                        config=config,
+                    ),
+                    timeout=30,
                 )
+            except asyncio.TimeoutError:
+                logger.error("Gemini vision call timed out (30s)")
+                # Remove last content to prevent stale history
+                if len(contents) > 1:
+                    contents.pop()
+                continue
             except Exception as e:
                 logger.error(f"Gemini vision call failed: {e}")
+                if len(contents) > 1:
+                    contents.pop()
                 continue
 
             if not response.candidates or not response.candidates[0].content:
