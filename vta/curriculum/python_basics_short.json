@@ -1,0 +1,52 @@
+{
+  "tutorial_id": "python_basics_v1",
+  "title": "Python Basics on Linux Terminal",
+  "description": "Learn Python fundamentals by running Python directly in the Linux terminal",
+  "pdf_url": "",
+  "tasks": [
+    {
+      "task_id": "T1",
+      "type": "theory",
+      "title": "Welcome to Python",
+      "slide_number": 1,
+      "slide_context": "Python is one of the most popular programming languages in the world. It is used for web development, data science, artificial intelligence, automation, and much more. In this session, we will learn Python basics by running code directly in the Linux terminal. You do not need any special software — Python comes pre-installed on Linux. Let us get started.",
+      "sonic_prompt": null,
+      "subtasks": []
+    },
+    {
+      "task_id": "T2",
+      "type": "practical",
+      "title": "Open Terminal and Start Python",
+      "sonic_prompt": "First, I will open the Linux terminal and start the Python interpreter. Watch the screen carefully.",
+      "slide_number": null,
+      "slide_context": null,
+      "subtasks": [
+        {
+          "subtask_id": "T2.1",
+          "title": "Open the Linux Terminal",
+          "sonic_prompt": "Let me open the terminal for you. This is where we will run all our Python code.",
+          "action": "open_terminal",
+          "params": {},
+          "reflex_check": null
+        },
+        {
+          "subtask_id": "T2.2",
+          "title": "Start Python interpreter",
+          "sonic_prompt": "Now I will start the Python interpreter by typing python3. You will see the Python prompt which looks like three greater-than signs.",
+          "action": "run_command",
+          "params": { "cmd": "python3" },
+          "reflex_check": null
+        }
+      ]
+    },
+    {
+      "task_id": "T7",
+      "type": "theory",
+      "title": "Session Complete",
+      "slide_number": 2,
+      "slide_context": "Congratulations! You have completed the Python Basics session. Today you learned five fundamental Python concepts: printing output with the print function, creating and using variables, performing math operations, working with lists and for loops, and making decisions with if statements. These are the building blocks of every Python program. Keep practicing and you will become a confident Python developer in no time.",
+      "sonic_prompt": null,
+      "subtasks": []
+    }
+  ]
+}
