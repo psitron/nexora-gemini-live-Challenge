@@ -415,7 +415,6 @@ async def execute_desktop_vision_task(
     await sonic.reconnect(prompt_override=intro_prompt)
     await sonic.send_text_kickstart("Please begin.")
     await sonic.wait_for_speech_done(timeout=30)
-    await sonic.wait_for_playback_done(timeout=10)
 
     desktop_loop = _get_desktop_vision_loop()
 
@@ -423,24 +422,18 @@ async def execute_desktop_vision_task(
         for subtask in subtasks:
             subtask_id = subtask["subtask_id"]
             subtask_goal = subtask.get("goal", subtask["title"])
-            subtask_prompt = subtask.get("sonic_prompt", subtask["title"])
 
             await ws_send({"event": "subtask_started", "subtask_id": subtask_id})
 
-            narration_prompt = f"Say these exact words and nothing else:\n\n{subtask_prompt}"
-            await sonic.reconnect(prompt_override=narration_prompt)
-            await sonic.send_text_kickstart("Please begin.")
-            await sonic.wait_for_speech_done(timeout=30)
-            await sonic.wait_for_playback_done(timeout=10)
-
-            logger.info(f"Desktop vision loop for subtask {subtask_id}: {subtask_goal}")
+            # Skip per-subtask narration — go straight to action (faster)
+            logger.info(f"Desktop vision: {subtask_id} — {subtask_goal}")
             result = await desktop_loop.run(goal=subtask_goal, agent=agent, ws_send=ws_send)
-            logger.info(f"Subtask {subtask_id} result: success={result.success} — {result.message}")
+            logger.info(f"Subtask {subtask_id}: success={result.success} — {result.message}")
 
             await ws_send({"event": "subtask_completed", "subtask_id": subtask_id})
     else:
         goal = task.get("goal", task.get("title", "complete the task"))
-        logger.info(f"Starting desktop vision loop for goal: {goal}")
+        logger.info(f"Desktop vision: {goal}")
         result = await desktop_loop.run(goal=goal, agent=agent, ws_send=ws_send)
 
     # Summary
@@ -453,7 +446,6 @@ async def execute_desktop_vision_task(
     await sonic.reconnect(prompt_override=summary_prompt)
     await sonic.send_text_kickstart("Please begin.")
     await sonic.wait_for_speech_done(timeout=30)
-    await sonic.wait_for_playback_done(timeout=15)
     await ws_send({"event": "aria_listening"})
 
     transcript = await sonic.wait_for_student_speech(timeout=120)

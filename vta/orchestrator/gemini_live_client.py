@@ -302,7 +302,7 @@ class GeminiLiveClient:
         return text
 
     async def _settle_transcript(self):
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(1.0)
         if self._transcript_buffer:
             full_text = " ".join(t for _, t in self._transcript_buffer)
             if self.transcript_callback:
@@ -339,7 +339,7 @@ class GeminiLiveClient:
             if self._last_audio_output_time == 0.0:
                 continue
             gap = time.time() - self._last_audio_output_time
-            if gap >= 2.0 and not self._speech_done.is_set():
+            if gap >= 1.5 and not self._speech_done.is_set():
                 logger.info(f"Speech done ({gap:.1f}s gap)")
                 self._speech_done.set()
 
