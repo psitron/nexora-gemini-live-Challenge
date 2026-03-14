@@ -215,8 +215,15 @@ class GeminiLiveClient:
         return self.get_and_clear_transcript()
 
     def get_and_clear_transcript(self) -> str:
-        """Get accumulated transcript and clear buffer."""
+        """Get accumulated transcript and clear buffer.
+
+        Cleans up fragmented syllables by collapsing multiple spaces
+        and joining partial words (e.g. "rea dy" → "ready").
+        """
+        import re
         text = " ".join(t for _, t in self._transcript_buffer).strip()
+        # Collapse multiple spaces
+        text = re.sub(r'\s+', ' ', text)
         self._transcript_buffer.clear()
         self._transcript_event.clear()
         return text
@@ -492,8 +499,8 @@ class GeminiLiveClient:
                                 self._speech_done.clear()
                                 # Accumulate audio data to reduce crackling
                                 self._audio_out_buffer.extend(part.inline_data.data)
-                                # Send when buffer reaches ~100ms of audio (4800 bytes at 24kHz 16-bit)
-                                if len(self._audio_out_buffer) >= 4800:
+                                # Send when buffer reaches ~200ms of audio (9600 bytes at 24kHz 16-bit)
+                                if len(self._audio_out_buffer) >= 9600:
                                     audio_b64 = base64.b64encode(bytes(self._audio_out_buffer)).decode("utf-8")
                                     self._audio_out_buffer.clear()
                                     if self.audio_output_callback:

@@ -2,7 +2,16 @@
   "permissions": {
     "allow": [
       "Bash(ls:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:google.github.io)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:codelabs.developers.google.com)",
+      "Bash(git checkout:*)",
+      "WebSearch",
+      "WebFetch(domain:ai.google.dev)",
+      "Bash(gh api:*)"
     ]
   }
 }

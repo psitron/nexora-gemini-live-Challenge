@@ -8,12 +8,14 @@ then runs reflex verification.
 
 import logging
 import os
+import platform
 import sys
 
-# Check if running in mock mode (for Windows/local dev)
+# Detect platform and mode
+IS_WINDOWS = platform.system() == "Windows"
 MOCK_MODE = os.environ.get("VTA_MOCK_DESKTOP", "false").lower() == "true"
 
-if not MOCK_MODE:
+if not MOCK_MODE and not IS_WINDOWS:
     # Apply Linux patches before importing core modules
     from vta.agent_s3.linux_adaptations import apply_linux_patches
     apply_linux_patches()
@@ -22,10 +24,13 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
-# Import actions based on mode
+# Import actions based on mode and platform
 if MOCK_MODE:
     from vta.agent_s3 import mock_actions as actions
-    print("⚠️  Running in MOCK MODE - desktop actions will be simulated")
+    print("Running in MOCK MODE - desktop actions will be simulated")
+elif IS_WINDOWS:
+    from vta.agent_s3 import windows_actions as actions
+    print("Running in WINDOWS MODE - using pyautogui for desktop control")
 else:
     from vta.agent_s3 import actions
 
@@ -86,7 +91,8 @@ async def health():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "display": os.environ.get("DISPLAY", ":1"),
+        "platform": platform.system(),
+        "display": os.environ.get("DISPLAY", "N/A") if not IS_WINDOWS else "windows_desktop",
         "mock_mode": MOCK_MODE,
     }
 
