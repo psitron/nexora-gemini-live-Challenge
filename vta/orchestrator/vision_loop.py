@@ -66,6 +66,7 @@ class VisionLoop:
         self._model = os.environ.get("GEMINI_COMPUTER_USE_MODEL", COMPUTER_USE_MODEL)
         self._playwright = None
         self._browser = None
+        self._persistent_page = None  # Reused across subtasks
         logger.info(f"VisionLoop initialized — model: {self._model}")
 
     async def _ensure_browser(self):
@@ -125,7 +126,14 @@ class VisionLoop:
         await ws_send({"event": "vision_loop_started", "goal": goal})
 
         steps = 0
-        page = await self._new_page()
+        # Reuse existing page if available (preserves state across subtasks)
+        if self._persistent_page and not self._persistent_page.is_closed():
+            page = self._persistent_page
+            logger.info("Reusing existing browser page")
+        else:
+            page = await self._new_page()
+            self._persistent_page = page
+            logger.info("Created new browser page")
 
         try:
             # If goal contains a URL, navigate there first
@@ -319,11 +327,8 @@ Here is the current screenshot:"""),
                 logger.info(f"State captured. History: {len(contents)} messages.")
 
         finally:
-            # Close the page but keep browser alive for reuse
-            try:
-                await page.close()
-            except Exception:
-                pass
+            # Keep page open for next subtask — only close on VisionLoop.close()
+            pass
 
         # Max steps reached
         logger.warning(f"VisionLoop reached max steps ({max_steps})")
