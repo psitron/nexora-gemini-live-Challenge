@@ -234,10 +234,16 @@ Current screenshot:"""),
             ),
         )
 
+        # Use highest available media resolution for Computer Use accuracy
+        try:
+            media_res = types.MediaResolution.MEDIA_RESOLUTION_ULTRA_HIGH
+        except AttributeError:
+            media_res = types.MediaResolution.MEDIA_RESOLUTION_HIGH
+
         config = types.GenerateContentConfig(
             tools=[computer_use_tool],
             temperature=0.1,
-            media_resolution=types.MediaResolution.MEDIA_RESOLUTION_ULTRA_HIGH,
+            media_resolution=media_res,
         )
 
         while steps < max_steps:

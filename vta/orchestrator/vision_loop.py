@@ -207,7 +207,10 @@ Current screenshot:"""),
             # Note: thinking_config disabled — it causes the model to
             # over-analyze and navigate repeatedly instead of clicking
 
-            config_kwargs["media_resolution"] = types.MediaResolution.MEDIA_RESOLUTION_ULTRA_HIGH
+            try:
+                config_kwargs["media_resolution"] = types.MediaResolution.MEDIA_RESOLUTION_ULTRA_HIGH
+            except AttributeError:
+                config_kwargs["media_resolution"] = types.MediaResolution.MEDIA_RESOLUTION_HIGH
             config = types.GenerateContentConfig(**config_kwargs)
 
             while steps < max_steps:
