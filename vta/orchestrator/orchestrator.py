@@ -65,10 +65,11 @@ async def run_tutorial(
     logger.info(f"Starting tutorial '{tutorial_id}' in mode: {mode.value}")
 
     # Welcome — reconnect with welcome prompt, wait for student to say ready
+    desc = tutorial.get('description', 'you will learn key concepts')
     welcome_prompt = (
-        f"You are ARIA, a voice tutor. Read this exactly: "
-        f"'Welcome to {tutorial['title']}. In this course, {tutorial.get('description', 'you will learn key concepts')}. "
-        f"Say ready when you want to begin.' Then stop talking and listen."
+        f"Say these exact words and nothing else: "
+        f"Welcome to {tutorial['title']}. {desc}. "
+        f"Say ready when you want to begin."
     )
     await sonic.reconnect(prompt_override=welcome_prompt)
     await sonic.send_text_kickstart("Please begin.")
@@ -154,11 +155,8 @@ async def execute_theory_task(
     )
 
     prompt = (
-        f"You are ARIA, a voice tutor reading slides to a student. "
-        f"Your ONLY job is to read the following text word-for-word. "
-        f"Do NOT add your own words. Do NOT explain further. Do NOT teach beyond what is written. "
-        f"Simply read this text aloud exactly as written:\n\n"
-        f'"{context}"\n\n'
+        f"Say these exact words and nothing else:\n\n"
+        f"{context}\n\n"
         f"{closing}"
     )
 
@@ -202,8 +200,7 @@ async def execute_practical_task(
         task_sonic_prompt = "Watch your screen."
 
     intro_prompt = (
-        f"You are ARIA. Read ONLY the following words exactly as written. "
-        f"Do not add, change, or expand:\n\n{task_sonic_prompt}"
+        f"Say these exact words and nothing else:\n\n{task_sonic_prompt}"
     )
 
     await sonic.reconnect(prompt_override=intro_prompt)
@@ -253,8 +250,7 @@ async def execute_practical_task(
     # 3. Summary narration — minimal, exact words only
     closing = "Any questions, or say ready to continue." if not is_last else ""
     summary_prompt = (
-        f"You are ARIA. Read ONLY the following words exactly as written. "
-        f"Do not add, change, or expand:\n\n"
+        f"Say these exact words and nothing else:\n\n"
         f"That completes the demonstration. {closing}"
     )
     await ws_send({"event": "aria_thinking"})
@@ -298,8 +294,7 @@ async def execute_vision_task(
 
     # 1. Task intro narration
     intro_prompt = (
-        f"You are ARIA. Read ONLY the following words exactly as written. "
-        f"Do not add, change, or expand:\n\n{sonic_intro}"
+        f"Say these exact words and nothing else:\n\n{sonic_intro}"
     )
     await sonic.reconnect(prompt_override=intro_prompt)
     await sonic.send_text_kickstart("Please begin.")
@@ -340,8 +335,7 @@ async def execute_vision_task(
     # 3. Summary narration
     closing = "Any questions, or say ready to continue." if not is_last else ""
     summary_prompt = (
-        f"You are ARIA. Read ONLY the following words exactly as written. "
-        f"Do not add, change, or expand:\n\n"
+        f"Say these exact words and nothing else:\n\n"
         f"That completes the demonstration. {closing}"
     )
     await ws_send({"event": "aria_thinking"})
