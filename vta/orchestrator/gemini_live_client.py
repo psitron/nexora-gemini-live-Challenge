@@ -195,8 +195,15 @@ class GeminiLiveClient:
         # Build parts: text + optional image
         parts = [types.Part(text=instruction)]
         if image_bytes:
-            parts.append(types.Part.from_bytes(data=image_bytes, mime_type="image/png"))
-            logger.info(f">>> {instruction[:80]} [+image {len(image_bytes)}B]")
+            parts.append(
+                types.Part(
+                    inline_data=types.Blob(
+                        data=image_bytes,
+                        mime_type="image/png",
+                    )
+                )
+            )
+            logger.info(f">>> {instruction[:80]} [+slide image {len(image_bytes)}B]")
         else:
             logger.info(f">>> {instruction[:100]}")
 
