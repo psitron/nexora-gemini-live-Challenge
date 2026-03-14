@@ -367,15 +367,6 @@ export default function App() {
               {showUploadForm && (
                 <div className="upload-section">
                   <div className="upload-row">
-                    <input
-                      type="text"
-                      placeholder="Course title"
-                      value={uploadTitle}
-                      onChange={(e) => setUploadTitle(e.target.value)}
-                      className="upload-input"
-                    />
-                  </div>
-                  <div className="upload-row">
                     <label className="upload-label">
                       Slides (PDF):
                       <input type="file" accept=".pdf" onChange={(e) => setUploadedFile(e.target.files[0])} />
