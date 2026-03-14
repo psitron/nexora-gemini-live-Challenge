@@ -214,7 +214,7 @@ class DesktopVisionLoop:
                             )
                         ],
                         config=types.GenerateContentConfig(
-                            max_output_tokens=256,
+                            max_output_tokens=1024,
                             temperature=0.1,
                         ),
                     ),
@@ -301,7 +301,7 @@ class DesktopVisionLoop:
                                 )
                             ],
                             config=types.GenerateContentConfig(
-                                max_output_tokens=256,
+                                max_output_tokens=1024,
                                 temperature=0.1,
                             ),
                         ),
