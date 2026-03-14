@@ -6,12 +6,31 @@
   "tasks": [
     {
       "task_id": "T1",
-      "type": "theory",
-      "title": "What is Linux?",
-      "slide_number": 1,
-      "slide_context": "Linux is an open-source operating system first created by Linus Torvalds in 1991. It powers over 90 percent of the world's servers, all Android devices, and most supercomputers. Unlike Windows or macOS, Linux is free, highly customizable, and gives users direct control through the command line. Learning Linux is essential for any developer, DevOps engineer, or system administrator.",
-      "sonic_prompt": null,
-      "subtasks": []
+      "type": "vision_driven",
+      "title": "Open Jupyter and Create Python Notebook",
+      "sonic_prompt": "Watch as I open Jupyter Notebook and create a new Python notebook.",
+      "slide_number": null,
+      "slide_context": null,
+      "subtasks": [
+        {
+          "subtask_id": "T1.1",
+          "title": "Open Jupyter in browser",
+          "sonic_prompt": "Opening Jupyter Notebook in the browser.",
+          "goal": "Navigate to http://localhost:8888 to open Jupyter Notebook. The Jupyter file browser should appear."
+        },
+        {
+          "subtask_id": "T1.2",
+          "title": "Create a new Python notebook",
+          "sonic_prompt": "Now I will create a new Python notebook.",
+          "goal": "On the Jupyter file browser page, click the 'New' button on the top-right side, then click 'Python 3 (ipykernel)' from the dropdown to create a new notebook."
+        },
+        {
+          "subtask_id": "T1.3",
+          "title": "Write and run Python code",
+          "sonic_prompt": "Typing a simple Python program and running it.",
+          "goal": "In the new Jupyter notebook, click on the first empty code cell, type: print(2+3) then press Shift+Enter to run it. The output 5 should appear below the cell."
+        }
+      ]
     },
     {
       "task_id": "T2",
