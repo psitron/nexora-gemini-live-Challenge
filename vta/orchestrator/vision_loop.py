@@ -406,6 +406,18 @@ Current screenshot:"""),
             keys = args.get("keys", "")
             if isinstance(keys, list):
                 keys = "+".join(keys)
+            # Playwright needs proper key names: Shift not shift, Control not ctrl
+            key_map = {
+                "shift": "Shift", "ctrl": "Control", "control": "Control",
+                "alt": "Alt", "meta": "Meta", "enter": "Enter",
+                "tab": "Tab", "escape": "Escape", "backspace": "Backspace",
+                "delete": "Delete", "space": " ", "arrowup": "ArrowUp",
+                "arrowdown": "ArrowDown", "arrowleft": "ArrowLeft",
+                "arrowright": "ArrowRight",
+            }
+            parts = keys.split("+")
+            mapped = [key_map.get(k.lower().strip(), k) for k in parts]
+            keys = "+".join(mapped)
             logger.info(f"Key combo: {keys}")
             await page.keyboard.press(keys)
 
