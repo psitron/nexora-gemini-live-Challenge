@@ -58,23 +58,47 @@
     },
     {
       "task_id": "T4",
-      "type": "vision_driven",
-      "title": "Jupyter Notebook: Write and Run Python Code",
-      "sonic_prompt": "Now I will show you how to use Jupyter Notebook to write and run Python code. Watch carefully.",
+      "type": "practical",
+      "title": "Start Jupyter Notebook",
+      "sonic_prompt": "Now I will start Jupyter Notebook on this machine. Watch the terminal as I launch it.",
       "slide_number": null,
       "slide_context": null,
       "subtasks": [
         {
           "subtask_id": "T4.1",
-          "title": "Navigate to Google",
-          "sonic_prompt": "Watch as I navigate to Google in the browser.",
-          "goal": "Navigate to https://www.google.com and verify the Google search page is loaded."
+          "title": "Start Jupyter Notebook server",
+          "sonic_prompt": "Starting the Jupyter Notebook server. This will take a moment.",
+          "action": "run_command",
+          "params": { "cmd": "jupyter notebook --no-browser --ip=0.0.0.0 --port=8888 --NotebookApp.token='' --NotebookApp.password='' &" },
+          "reflex_check": null
+        }
+      ]
+    },
+    {
+      "task_id": "T5",
+      "type": "vision_driven",
+      "title": "Create and Run Python Code in Jupyter",
+      "sonic_prompt": "Now watch as I open Jupyter Notebook in the browser and write Python code.",
+      "slide_number": null,
+      "slide_context": null,
+      "subtasks": [
+        {
+          "subtask_id": "T5.1",
+          "title": "Open Jupyter in browser",
+          "sonic_prompt": "Opening Jupyter Notebook in the browser.",
+          "goal": "Navigate to http://localhost:8888 to open Jupyter Notebook. The Jupyter file browser should appear."
         },
         {
-          "subtask_id": "T4.2",
-          "title": "Search for Python tutorials",
-          "sonic_prompt": "Now I will search for Python tutorials on Google.",
-          "goal": "On the Google search page, click the search box, type 'Python beginner tutorial' and press Enter to search."
+          "subtask_id": "T5.2",
+          "title": "Create a new Python notebook",
+          "sonic_prompt": "Now I will create a new Python notebook by clicking the New button.",
+          "goal": "On the Jupyter file browser page, click the 'New' button on the right side, then click 'Python 3 (ipykernel)' from the dropdown to create a new notebook."
+        },
+        {
+          "subtask_id": "T5.3",
+          "title": "Write and run Python code",
+          "sonic_prompt": "Finally, I will type a simple Python program and run it.",
+          "goal": "In the new Jupyter notebook, click on the first empty code cell, type: print(2+3) then press Shift+Enter to run it. The output 5 should appear below the cell."
         }
       ]
     }
