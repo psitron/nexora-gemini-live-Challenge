@@ -1,59 +1,43 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 /**
- * PDF slide viewer using PDF.js.
- * Navigates to specific pages on show_slide events.
+ * Slide viewer — shows PDF pages or text-based slides.
+ * Falls back to text slides when no PDF is available.
  */
-export default function SlideViewer({ pdfUrl, currentPage, onSlideLoaded }) {
+export default function SlideViewer({ pdfUrl, currentPage, currentTask, onSlideLoaded }) {
   const canvasRef = useRef(null);
   const [pdfDoc, setPdfDoc] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Load PDF document
+  // Load PDF document (if URL provided)
   useEffect(() => {
-    console.log('[DEBUG SlideViewer] useEffect triggered, pdfUrl:', pdfUrl);
-    if (!pdfUrl) {
-      console.log('[DEBUG SlideViewer] No pdfUrl, returning early');
-      return;
-    }
+    if (!pdfUrl) return;
 
     let cancelled = false;
     setLoading(true);
-    console.log('[DEBUG SlideViewer] Starting PDF load from:', pdfUrl);
 
     (async () => {
       try {
         const pdfjsLib = await import('pdfjs-dist');
-
-        // Use reliable CDN (unpkg) instead of cloudflare
         pdfjsLib.GlobalWorkerOptions.workerSrc =
           `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
-        // Configure loading task with CORS support
-        console.log('[DEBUG SlideViewer] Calling pdfjsLib.getDocument with url:', pdfUrl);
         const loadingTask = pdfjsLib.getDocument({
           url: pdfUrl,
           withCredentials: false,
           isEvalSupported: false,
         });
 
-        console.log('[DEBUG SlideViewer] Waiting for PDF to load...');
         const doc = await loadingTask.promise;
-        console.log('[DEBUG SlideViewer] PDF loaded successfully, pages:', doc.numPages);
         if (!cancelled) {
           setPdfDoc(doc);
           setLoading(false);
         }
       } catch (err) {
-        console.error('[DEBUG SlideViewer] PDF load error:', err);
+        console.error('PDF load error:', err);
         if (!cancelled) {
-          let errorMsg = `Failed to load PDF: ${err.message}`;
-          if (err.message.includes('CORS') || err.message.includes('fetch')) {
-            errorMsg += '\n\nThe PDF URL may not be publicly accessible. Please use a direct PDF link from a public source (e.g., Google Drive public link, Dropbox, or a CDN).';
-          }
-          console.log('[DEBUG SlideViewer] Setting error:', errorMsg);
-          setError(errorMsg);
+          setError(err.message);
           setLoading(false);
         }
       }
@@ -62,7 +46,7 @@ export default function SlideViewer({ pdfUrl, currentPage, onSlideLoaded }) {
     return () => { cancelled = true; };
   }, [pdfUrl]);
 
-  // Render specific page
+  // Render PDF page
   useEffect(() => {
     if (!pdfDoc || !currentPage || !canvasRef.current) return;
 
@@ -75,8 +59,6 @@ export default function SlideViewer({ pdfUrl, currentPage, onSlideLoaded }) {
 
         const canvas = canvasRef.current;
         const context = canvas.getContext('2d');
-
-        // Scale to fit container
         const containerWidth = canvas.parentElement.clientWidth;
         const viewport = page.getViewport({ scale: 1 });
         const scale = containerWidth / viewport.width;
@@ -101,26 +83,54 @@ export default function SlideViewer({ pdfUrl, currentPage, onSlideLoaded }) {
     return () => { cancelled = true; };
   }, [pdfDoc, currentPage, onSlideLoaded]);
 
-  if (error) {
-    return <div className="slide-viewer slide-error">{error}</div>;
-  }
-
-  if (loading) {
+  // If PDF loaded successfully, show it
+  if (pdfDoc) {
     return (
-      <div className="slide-viewer slide-loading">
-        Loading slides...
+      <div className="slide-viewer">
+        <canvas ref={canvasRef} className="slide-canvas" />
+        <div className="slide-info">
+          Slide {currentPage} of {pdfDoc.numPages}
+        </div>
       </div>
     );
   }
 
+  // No PDF — show text-based slide card
+  if (currentTask) {
+    return (
+      <div className="slide-viewer">
+        <div className="text-slide">
+          <div className="text-slide-header">
+            <span className="text-slide-number">Slide {currentPage}</span>
+            <span className="text-slide-type">{currentTask.type || 'theory'}</span>
+          </div>
+          <h2 className="text-slide-title">{currentTask.title || 'Untitled'}</h2>
+          <div className="text-slide-content">
+            {currentTask.slide_context || currentTask.sonic_prompt || 'Listen to ARIA for this section.'}
+          </div>
+          {currentTask.goal && (
+            <div className="text-slide-goal">
+              <strong>Goal:</strong> {currentTask.goal}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return <div className="slide-viewer slide-loading">Loading slides...</div>;
+  }
+
+  // Default — waiting for tutorial to start
   return (
     <div className="slide-viewer">
-      <canvas ref={canvasRef} className="slide-canvas" />
-      {pdfDoc && (
-        <div className="slide-info">
-          Slide {currentPage} of {pdfDoc.numPages}
+      <div className="text-slide">
+        <h2 className="text-slide-title">Welcome</h2>
+        <div className="text-slide-content">
+          Start the tutorial to begin learning.
         </div>
-      )}
+      </div>
     </div>
   );
 }

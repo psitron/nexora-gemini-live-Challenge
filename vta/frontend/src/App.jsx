@@ -55,6 +55,7 @@ export default function App() {
   const [currentTaskId, setCurrentTaskId] = useState(null);
   const [rightPanel, setRightPanel] = useState('slides'); // 'slides' or 'desktop'
   const [currentPage, setCurrentPage] = useState(1);
+  const [currentTask, setCurrentTask] = useState(null);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [confirmationTask, setConfirmationTask] = useState('');
   const [confirmationMessage, setConfirmationMessage] = useState('');
@@ -137,6 +138,7 @@ export default function App() {
 
     on('task_started', (data) => {
       setCurrentTaskId(data.task_id);
+      setCurrentTask(data.task || null);
       setTasks((prev) => updateTaskStatus(prev, data.task_id, null, 'running', data.task));
     });
 
@@ -333,6 +335,7 @@ export default function App() {
             <SlideViewer
               pdfUrl={pdfUrl}
               currentPage={currentPage}
+              currentTask={currentTask}
               onSlideLoaded={handleSlideLoaded}
             />
           </div>

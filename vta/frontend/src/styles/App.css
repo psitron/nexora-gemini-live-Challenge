@@ -519,6 +519,67 @@ body {
   color: #f87171;
 }
 
+/* Text-based slides (when no PDF) */
+.text-slide {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border-radius: 12px;
+  padding: 48px 40px;
+  margin: 20px;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.text-slide-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.text-slide-number {
+  color: #818cf8;
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.text-slide-type {
+  color: #6ee7b7;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  background: rgba(110, 231, 183, 0.1);
+  padding: 4px 12px;
+  border-radius: 12px;
+}
+
+.text-slide-title {
+  color: #f1f5f9;
+  font-size: 32px;
+  font-weight: 700;
+  margin: 0 0 24px 0;
+  line-height: 1.3;
+}
+
+.text-slide-content {
+  color: #cbd5e1;
+  font-size: 18px;
+  line-height: 1.8;
+}
+
+.text-slide-goal {
+  margin-top: 24px;
+  padding: 16px;
+  background: rgba(129, 140, 248, 0.1);
+  border-left: 3px solid #818cf8;
+  border-radius: 0 8px 8px 0;
+  color: #c7d2fe;
+  font-size: 15px;
+}
+
 /* noVNC Panel */
 .novnc-panel {
   flex: 1;
