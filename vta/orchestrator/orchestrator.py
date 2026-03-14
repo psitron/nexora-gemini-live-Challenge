@@ -417,8 +417,13 @@ async def handle_student_response(
 
         elif action == "repeat":
             logger.info(f"Student requested repeat of {task['task_id']}")
+            # Re-read the full slide content, not just a summary
+            slide_context = task.get("slide_context", "") or task.get("title", "")
+            if len(slide_context) > 1200:
+                slide_context = slide_context[:1200] + "..."
             repeat_prompt = (
-                f"You are ARIA. Briefly summarize: {task['title']}. "
+                f"You are ARIA. The student wants to hear this again. "
+                f"Read the following content clearly:\n\n{slide_context}\n\n"
                 f"Then ask: 'Any questions or ready to move on?' Then listen."
             )
             await ws_send({"event": "aria_thinking"})
