@@ -128,6 +128,18 @@ class VisionLoop:
         page = await self._new_page()
 
         try:
+            # If goal contains a URL, navigate there first
+            import re
+            url_match = re.search(r'https?://\S+', goal)
+            if url_match:
+                start_url = url_match.group(0).rstrip('.')
+                logger.info(f"Goal contains URL — navigating to: {start_url}")
+                try:
+                    await page.goto(start_url, wait_until="domcontentloaded", timeout=15000)
+                except Exception as e:
+                    logger.warning(f"Initial navigation failed: {e}")
+                await asyncio.sleep(2)
+
             # Take initial screenshot
             screenshot = await page.screenshot()
 
@@ -195,8 +207,13 @@ Here is the current screenshot:"""),
                     logger.error(f"Gemini Computer Use call failed: {e}")
                     continue
 
-                if not response.candidates or not response.candidates[0].content:
-                    logger.warning("Empty response from Gemini")
+                if not response.candidates:
+                    logger.warning(f"Empty response from Gemini. Full response: {response}")
+                    continue
+                if not response.candidates[0].content:
+                    # Log finish reason
+                    fr = response.candidates[0].finish_reason if hasattr(response.candidates[0], 'finish_reason') else 'unknown'
+                    logger.warning(f"No content in response. finish_reason={fr}")
                     continue
 
                 response_content = response.candidates[0].content

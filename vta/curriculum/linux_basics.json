@@ -66,27 +66,15 @@
       "subtasks": [
         {
           "subtask_id": "T4.1",
-          "title": "Start Jupyter and open in Firefox",
-          "sonic_prompt": "First, I will open a terminal and start Jupyter Notebook, then open it in Firefox.",
-          "goal": "Jupyter Notebook is already installed. Do NOT install it. Open a terminal and run ONLY this command: jupyter notebook --no-browser --ip=0.0.0.0 --port=8888 & Then wait 3 seconds and run: firefox http://localhost:8888"
+          "title": "Navigate to Google",
+          "sonic_prompt": "Watch as I navigate to Google in the browser.",
+          "goal": "Navigate to https://www.google.com and verify the Google search page is loaded."
         },
         {
           "subtask_id": "T4.2",
-          "title": "Create a new Python notebook",
-          "sonic_prompt": "Now I will create a new Python notebook by clicking the New button.",
-          "goal": "Jupyter Notebook is already open in Firefox at localhost:8888. Do NOT run any install commands. Click the 'New' button on the right side of the Jupyter interface and then click 'Python 3 (ipykernel)' to create a new notebook."
-        },
-        {
-          "subtask_id": "T4.3",
-          "title": "Click on the code cell",
-          "sonic_prompt": "Now I will click on the first code cell to start writing Python code.",
-          "goal": "In the open Jupyter notebook, click on the first empty code cell so it is active and ready for input."
-        },
-        {
-          "subtask_id": "T4.4",
-          "title": "Write and run Python code",
-          "sonic_prompt": "Finally, I will type a simple Python program to add two plus three and run it.",
-          "goal": "In the active Jupyter code cell, type the code: print(2+3) then press Shift+Enter to run it. Verify the output 5 appears below the cell."
+          "title": "Search for Python tutorials",
+          "sonic_prompt": "Now I will search for Python tutorials on Google.",
+          "goal": "On the Google search page, click the search box, type 'Python beginner tutorial' and press Enter to search."
         }
       ]
     }
