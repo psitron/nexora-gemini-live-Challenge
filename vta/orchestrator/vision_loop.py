@@ -301,7 +301,12 @@ Current screenshot:"""),
                         logger.error(f"Action '{fc.name}' failed: {e}")
 
                     # Wait for page to settle after action
-                    await asyncio.sleep(2.0)
+                    # Shorter wait for click (dropdown needs to stay visible)
+                    # Longer wait for navigate (page needs to load)
+                    if fc.name == "navigate":
+                        await asyncio.sleep(3.0)
+                    else:
+                        await asyncio.sleep(0.5)
 
                     # Take new screenshot
                     new_screenshot = await page.screenshot()
