@@ -49,7 +49,14 @@ if ! pgrep -f "websockify.*6080" > /dev/null; then
     sleep 1
 fi
 
-# 4. Start Agent S3 server
+# 4. Start Jupyter Notebook (for vision-driven tasks)
+if ! pgrep -f "jupyter-notebook" > /dev/null; then
+    echo "Starting Jupyter Notebook (port 8888)..."
+    jupyter notebook --no-browser --ip=0.0.0.0 --port=8888 --NotebookApp.token='' --NotebookApp.password='' &
+    sleep 3
+fi
+
+# 5. Start Agent S3 server
 echo "Starting Agent S3 (port 5001)..."
 python -m uvicorn vta.agent_s3.server:app --host 0.0.0.0 --port 5001 &
 sleep 2
