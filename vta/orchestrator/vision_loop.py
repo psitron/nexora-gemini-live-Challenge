@@ -225,14 +225,30 @@ Here is the current screenshot:"""),
                 if not response.candidates:
                     logger.warning(f"Empty response from Gemini. Full response: {response}")
                     continue
-                if not response.candidates[0].content:
-                    # Log finish reason
-                    fr = response.candidates[0].finish_reason if hasattr(response.candidates[0], 'finish_reason') else 'unknown'
+
+                candidate = response.candidates[0]
+                fr = candidate.finish_reason if hasattr(candidate, 'finish_reason') else 'unknown'
+                logger.info(f"Response finish_reason: {fr}")
+
+                if not candidate.content:
                     logger.warning(f"No content in response. finish_reason={fr}")
                     continue
 
-                response_content = response.candidates[0].content
+                response_content = candidate.content
                 contents.append(response_content)
+
+                # Log ALL parts for debugging
+                for i, part in enumerate(response_content.parts):
+                    part_type = "unknown"
+                    if hasattr(part, "function_call") and part.function_call:
+                        part_type = f"function_call: {part.function_call.name}({dict(part.function_call.args) if part.function_call.args else {}})"
+                    elif hasattr(part, "thought") and part.thought:
+                        part_type = f"thought: {part.text[:150] if part.text else ''}"
+                    elif hasattr(part, "text") and part.text:
+                        part_type = f"text: {part.text[:150]}"
+                    elif hasattr(part, "inline_data") and part.inline_data:
+                        part_type = "inline_data"
+                    logger.info(f"  Part[{i}]: {part_type}")
 
                 # Extract function calls
                 function_calls = [
@@ -240,11 +256,6 @@ Here is the current screenshot:"""),
                     for part in response_content.parts
                     if hasattr(part, "function_call") and part.function_call
                 ]
-
-                # Log thinking/reasoning
-                for part in response_content.parts:
-                    if hasattr(part, "thought") and part.thought and part.text:
-                        logger.info(f"[GEMINI THOUGHT] {part.text[:200]}")
 
                 # No function calls = model is done
                 if not function_calls:
