@@ -22,6 +22,10 @@ from vta.orchestrator.vision_loop import VisionLoop
 
 logger = logging.getLogger(__name__)
 
+# Slide explanation cache — prefetched in background
+_slide_cache: dict[str, str] = {}  # key: "pdf_key:page_num" → explanation text
+_slide_cache_tasks: dict[str, asyncio.Task] = {}  # background prefetch tasks
+
 # Lazily initialised so imports don't fail if core/ deps are missing at startup
 _vision_loop: Optional[VisionLoop] = None
 
@@ -64,6 +68,12 @@ async def run_tutorial(
     mode = exec_config.mode if exec_config else ExecutionMode.DEMO_ONLY
     logger.info(f"Starting tutorial '{tutorial_id}' in mode: {mode.value}")
 
+    # Prefetch first slide while welcome plays
+    pdf_key = tutorial.get("pdf_s3_key", "")
+    first_theory = next((t for t in tasks if t["type"] == "theory" and t.get("slide_number")), None)
+    if first_theory and pdf_key:
+        _start_prefetch(brain, pdf_key, first_theory["slide_number"])
+
     # Welcome — reconnect with welcome prompt, wait for student to say ready
     desc = tutorial.get('description', 'you will learn key concepts')
     welcome_prompt = (
@@ -93,9 +103,15 @@ async def run_tutorial(
         is_last = (i == len(tasks) - 1)
 
         if task["type"] == "theory":
+            # Prefetch NEXT theory slide while this one is being explained
+            for next_task in tasks[i+1:]:
+                if next_task["type"] == "theory" and next_task.get("slide_number") and pdf_key:
+                    _start_prefetch(brain, pdf_key, next_task["slide_number"])
+                    break
+
             transcript = await execute_theory_task(
                 task, sonic, brain, ws_send, is_last,
-                pdf_key=tutorial.get("pdf_s3_key", ""),
+                pdf_key=pdf_key,
             )
         elif task["type"] == "practical":
             transcript = await execute_practical_task(
@@ -124,6 +140,39 @@ async def run_tutorial(
     await state.end_session(session_id)
     await ws_send({"event": "session_complete", "tutorial_id": tutorial_id})
     logger.info(f"Tutorial {tutorial_id} completed for session {session_id}")
+
+
+async def _prefetch_slide(brain: BrainClient, pdf_key: str, slide_number: int):
+    """Background task: analyze a slide and cache the explanation."""
+    from vta.orchestrator.pdf_utils import get_pdf_path, extract_slide_image
+
+    cache_key = f"{pdf_key}:{slide_number}"
+    if cache_key in _slide_cache:
+        return  # Already cached
+
+    pdf_path = get_pdf_path(pdf_key)
+    if not pdf_path:
+        return
+
+    slide_image = extract_slide_image(pdf_path, slide_number)
+    if not slide_image:
+        return
+
+    logger.info(f"[PREFETCH] Analyzing slide {slide_number} in background...")
+    explanation = await brain.explain_slide(slide_image)
+    _slide_cache[cache_key] = explanation
+    logger.info(f"[PREFETCH] Slide {slide_number} cached ({len(explanation)} chars)")
+
+
+def _start_prefetch(brain: BrainClient, pdf_key: str, slide_number: int):
+    """Start prefetching a slide explanation in the background."""
+    if not pdf_key or not slide_number:
+        return
+    cache_key = f"{pdf_key}:{slide_number}"
+    if cache_key in _slide_cache or cache_key in _slide_cache_tasks:
+        return
+    task = asyncio.create_task(_prefetch_slide(brain, pdf_key, slide_number))
+    _slide_cache_tasks[cache_key] = task
 
 
 async def execute_theory_task(
@@ -163,12 +212,27 @@ async def execute_theory_task(
     )
 
     if slide_image:
-        # Vision mode: use BrainClient (Gemini 3 Flash) to analyze the slide,
-        # then feed the explanation to Live API for voice output.
-        # Native audio model doesn't support images — need two-step approach.
-        logger.info(f"[THEORY] Analyzing slide {slide_number} with vision model...")
-        explanation = await brain.explain_slide(slide_image, task.get("title", ""))
-        logger.info(f"[THEORY] Vision explanation ({len(explanation)} chars): {explanation[:200]}")
+        # Check cache first (may have been prefetched)
+        cache_key = f"{pdf_key}:{slide_number}"
+        if cache_key in _slide_cache:
+            explanation = _slide_cache.pop(cache_key)
+            logger.info(f"[THEORY] Using CACHED explanation for slide {slide_number} ({len(explanation)} chars)")
+        else:
+            # Wait for prefetch if in progress
+            if cache_key in _slide_cache_tasks:
+                logger.info(f"[THEORY] Waiting for prefetch of slide {slide_number}...")
+                await _slide_cache_tasks[cache_key]
+                _slide_cache_tasks.pop(cache_key, None)
+                explanation = _slide_cache.pop(cache_key, "")
+            else:
+                # No prefetch — analyze now
+                logger.info(f"[THEORY] Analyzing slide {slide_number} (no prefetch)...")
+                explanation = await brain.explain_slide(slide_image, task.get("title", ""))
+
+        if not explanation:
+            explanation = f"This slide covers: {task.get('title', 'the topic')}."
+
+        logger.info(f"[THEORY] Explanation ({len(explanation)} chars): {explanation[:200]}")
         prompt = f"Say these exact words:\n\n{explanation}\n\n{closing}"
     else:
         # Fallback: use text context if no image available
