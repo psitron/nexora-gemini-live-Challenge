@@ -129,11 +129,20 @@ class VisionLoop:
         await ws_send({"event": "vision_loop_started", "goal": goal})
 
         steps = 0
-        # Reuse existing page if available (preserves state across subtasks)
-        if self._persistent_page and not self._persistent_page.is_closed():
-            page = self._persistent_page
-            logger.info("Reusing existing browser page")
+        # Reuse existing browser context — switch to the latest tab
+        # (Jupyter opens notebooks in new tabs)
+        if self._browser and self._browser.is_connected():
+            pages = self._browser.contexts[0].pages if self._browser.contexts else []
+            if pages:
+                page = pages[-1]  # Use the most recent tab
+                self._persistent_page = page
+                logger.info(f"Using latest browser tab: {page.url}")
+            else:
+                page = await self._new_page()
+                self._persistent_page = page
+                logger.info("Created new browser page")
         else:
+            await self._ensure_browser()
             page = await self._new_page()
             self._persistent_page = page
             logger.info("Created new browser page")
@@ -307,12 +316,19 @@ Current screenshot:"""),
                         logger.error(f"Action '{fc.name}' failed: {e}")
 
                     # Wait for page to settle after action
-                    # Shorter wait for click (dropdown needs to stay visible)
-                    # Longer wait for navigate (page needs to load)
                     if fc.name == "navigate":
                         await asyncio.sleep(3.0)
                     else:
-                        await asyncio.sleep(0.5)
+                        await asyncio.sleep(1.0)
+
+                    # Check if a new tab opened (e.g., Jupyter opens notebook in new tab)
+                    if self._browser and self._browser.contexts:
+                        all_pages = self._browser.contexts[0].pages
+                        if len(all_pages) > 0 and all_pages[-1] != page:
+                            page = all_pages[-1]
+                            self._persistent_page = page
+                            logger.info(f"Switched to new tab: {page.url}")
+                            await asyncio.sleep(2.0)  # Wait for new tab to load
 
                     # Take new screenshot
                     new_screenshot = await page.screenshot()
