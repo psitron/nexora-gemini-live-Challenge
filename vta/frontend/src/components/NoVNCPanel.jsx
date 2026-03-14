@@ -2,14 +2,16 @@ import React, { useEffect, useState } from 'react';
 
   /**
    * noVNC panel — embeds the desktop viewer via iframe.
-   * Both app and noVNC run on HTTP so no mixed content issues.
+   * Uses nginx reverse proxy so everything is same-origin HTTPS.
+   * noVNC is served at /vnc/ path through nginx proxy.
    */
   export default function NoVNCPanel({ visible }) {
     const [noVncWebUrl, setNoVncWebUrl] = useState('');
 
     useEffect(() => {
-      const host = window.location.hostname;
-      setNoVncWebUrl(`http://${host}:6080/vnc.html?autoconnect=true&resize=scale&view_only=true`);
+      // Use same origin — nginx proxies /vnc/ to websockify port 6080
+      const origin = window.location.origin;
+      setNoVncWebUrl(`${origin}/vnc/vnc.html?autoconnect=true&resize=scale&view_only=true&path=websockify`);
     }, []);
 
     if (!visible) return null;
