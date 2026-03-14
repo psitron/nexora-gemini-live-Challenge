@@ -78,6 +78,7 @@ body {
   display: flex;
   flex-direction: column;
   border-right: 1px solid #2a2d3a;
+  overflow-y: auto;
   background: #141620;
 }
 
