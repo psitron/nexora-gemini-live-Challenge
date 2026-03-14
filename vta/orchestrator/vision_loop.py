@@ -75,15 +75,27 @@ class VisionLoop:
 
         from playwright.async_api import async_playwright
 
+        import os
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(
-            headless=True,  # Headless for reliable screenshots
-            args=[
-                "--no-sandbox",
-                "--disable-gpu",
-                "--disable-dev-shm-usage",
-            ],
-        )
+
+        # Use DISPLAY :1 (Xvfb) so student can see browser in noVNC
+        # Fall back to headless if no display available
+        display = os.environ.get("DISPLAY", "")
+        if display:
+            self._browser = await self._playwright.chromium.launch(
+                headless=False,
+                args=[
+                    "--no-sandbox",
+                    "--disable-gpu",
+                    "--disable-dev-shm-usage",
+                    "--disable-software-rasterizer",
+                ],
+            )
+        else:
+            self._browser = await self._playwright.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"],
+            )
         logger.info("Playwright browser launched")
 
     async def _new_page(self):
