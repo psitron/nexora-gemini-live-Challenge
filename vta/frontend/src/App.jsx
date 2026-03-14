@@ -393,7 +393,7 @@ export default function App() {
               )}
 
               {/* Settings (only show when a course is selected) */}
-              {selectedTutorialId && (
+              {selectedTutorialId && (<>
               <div className="mode-selector">
                 <label className="mode-selector-label">Tutorial Mode:</label>
                 {EXECUTION_MODES.map((mode) => (
@@ -437,7 +437,7 @@ export default function App() {
               >
                 Start Course
               </button>
-              )}
+              </>)}
             </div>
           )}
 
