@@ -148,8 +148,15 @@ class VisionLoop:
                     logger.warning(f"Initial navigation failed: {e}")
                 await asyncio.sleep(3)  # Extra wait for Jupyter to fully render
 
+            # Create screenshots directory for debugging
+            screenshots_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "screenshots")
+            os.makedirs(screenshots_dir, exist_ok=True)
+
             # Take initial screenshot
             screenshot = await page.screenshot()
+            with open(os.path.join(screenshots_dir, "step_0_initial.png"), "wb") as f:
+                f.write(screenshot)
+            logger.info(f"Saved screenshot: step_0_initial.png")
 
             # Build initial contents with goal + screenshot
             contents = [
@@ -299,6 +306,12 @@ Here is the current screenshot:"""),
                     # Take new screenshot
                     new_screenshot = await page.screenshot()
                     current_url = page.url
+
+                    # Save screenshot for debugging
+                    ss_name = f"step_{steps}_{fc.name}.png"
+                    with open(os.path.join(screenshots_dir, ss_name), "wb") as f:
+                        f.write(new_screenshot)
+                    logger.info(f"Saved screenshot: {ss_name}")
 
                     # Build FunctionResponse with screenshot inside (Google's pattern)
                     function_response_parts.append(
