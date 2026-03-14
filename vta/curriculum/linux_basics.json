@@ -6,7 +6,7 @@
   "tasks": [
     {
       "task_id": "T1",
-      "type": "vision_driven",
+      "type": "vision",
       "title": "Open Jupyter and Create Python Notebook",
       "sonic_prompt": "Watch as I open Jupyter Notebook and create a new Python notebook.",
       "slide_number": null,
@@ -89,7 +89,7 @@
     },
     {
       "task_id": "T5",
-      "type": "vision_driven",
+      "type": "vision",
       "title": "Create and Run Python Code in Jupyter",
       "sonic_prompt": "Now watch as I open Jupyter Notebook in the browser and write Python code.",
       "slide_number": null,

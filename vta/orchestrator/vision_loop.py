@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 MAX_STEPS = 20
 
 # Browser viewport size — match Xvfb display (1280x800)
-SCREEN_WIDTH = 1280
-SCREEN_HEIGHT = 800
+SCREEN_WIDTH = 1920
+SCREEN_HEIGHT = 1080
 
 # Gemini Computer Use model
 COMPUTER_USE_MODEL = "gemini-3-flash-preview"
@@ -207,6 +207,7 @@ Current screenshot:"""),
             # Note: thinking_config disabled — it causes the model to
             # over-analyze and navigate repeatedly instead of clicking
 
+            config_kwargs["media_resolution"] = types.MediaResolution.MEDIA_RESOLUTION_ULTRA_HIGH
             config = types.GenerateContentConfig(**config_kwargs)
 
             while steps < max_steps:

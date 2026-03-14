@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 MAX_STEPS = 15
 
 # Screen resolution — matches Xvfb config
-SCREEN_WIDTH = 1280
-SCREEN_HEIGHT = 800
+SCREEN_WIDTH = 1920
+SCREEN_HEIGHT = 1080
 
 VISION_MODEL = "gemini-3-flash-preview"
 
@@ -237,6 +237,7 @@ Current screenshot:"""),
         config = types.GenerateContentConfig(
             tools=[computer_use_tool],
             temperature=0.1,
+            media_resolution=types.MediaResolution.MEDIA_RESOLUTION_ULTRA_HIGH,
         )
 
         while steps < max_steps:

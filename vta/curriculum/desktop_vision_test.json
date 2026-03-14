@@ -6,7 +6,7 @@
   "tasks": [
     {
       "task_id": "T1",
-      "type": "desktop_vision",
+      "type": "vision",
       "title": "Open Terminal and Run Commands",
       "sonic_prompt": "Watch as I open a terminal and run some commands on the desktop.",
       "slide_number": null,

@@ -23,6 +23,28 @@ from vta.orchestrator.desktop_vision_loop import DesktopVisionLoop
 
 logger = logging.getLogger(__name__)
 
+def _extract_goal_text(task: dict) -> str:
+    """Extract all goal text from a task and its subtasks."""
+    parts = []
+    if task.get("goal"):
+        parts.append(task["goal"])
+    for sub in task.get("subtasks", []):
+        if sub.get("goal"):
+            parts.append(sub["goal"])
+    return " ".join(parts).lower()
+
+
+def _is_browser_task(goal_text: str) -> bool:
+    """Check if goal involves browser/web interaction."""
+    browser_keywords = [
+        "http://", "https://", "localhost", "127.0.0.1",
+        "browser", "firefox", "chrome", "chromium",
+        "jupyter", "notebook", "webpage", "website",
+        "navigate to", "open url",
+    ]
+    return any(kw in goal_text for kw in browser_keywords)
+
+
 # Slide explanation cache — prefetched in background
 _slide_cache: dict[str, str] = {}  # key: "pdf_key:page_num" → explanation text
 _slide_cache_tasks: dict[str, asyncio.Task] = {}  # background prefetch tasks
@@ -126,10 +148,15 @@ async def run_tutorial(
             transcript = await execute_practical_task(
                 task, sonic, agent, brain, ws_send, exec_config, is_last
             )
-        elif task["type"] == "vision_driven":
-            transcript = await execute_vision_task(task, sonic, agent, brain, ws_send, is_last)
-        elif task["type"] == "desktop_vision":
-            transcript = await execute_desktop_vision_task(task, sonic, agent, brain, ws_send, is_last)
+        elif task["type"] in ("vision", "vision_driven", "desktop_vision"):
+            # Auto-detect: browser vs desktop based on goal content
+            goal_text = _extract_goal_text(task)
+            if _is_browser_task(goal_text):
+                logger.info(f"Auto-detected: BROWSER vision (goal contains URL/web keywords)")
+                transcript = await execute_vision_task(task, sonic, agent, brain, ws_send, is_last)
+            else:
+                logger.info(f"Auto-detected: DESKTOP vision (no browser keywords)")
+                transcript = await execute_desktop_vision_task(task, sonic, agent, brain, ws_send, is_last)
         else:
             transcript = ""
 
