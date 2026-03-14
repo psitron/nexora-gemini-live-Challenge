@@ -291,6 +291,12 @@ async def _handle_start_session(msg: dict, websocket: WebSocket) -> str:
     student_id = msg.get("student_id", "anonymous")
     execution_mode = msg.get("execution_mode", None)
     brain_model = msg.get("brain_model", None)
+    api_key = msg.get("api_key", None)
+
+    # Set API key from frontend if provided
+    if api_key:
+        os.environ["GEMINI_API_KEY"] = api_key
+        logger.info("Gemini API key set from frontend")
 
     # Prevent duplicate session starts
     if session_id in active_sessions:

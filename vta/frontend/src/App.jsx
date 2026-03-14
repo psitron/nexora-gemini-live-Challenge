@@ -48,6 +48,7 @@ export default function App() {
   const [pdfUrl, setPdfUrl] = useState('');
   const [executionMode, setExecutionMode] = useState('demo_only');
   const [brainModel, setBrainModel] = useState('flash');
+  const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
   const [selectedTutorialId, setSelectedTutorialId] = useState(null);
   const [uploadedFile, setUploadedFile] = useState(null);
   const [uploadedCurriculum, setUploadedCurriculum] = useState(null);
@@ -248,14 +249,19 @@ export default function App() {
 
   // Start session
   const handleStartSession = useCallback(() => {
+    // Save API key to localStorage for persistence
+    if (apiKey) {
+      localStorage.setItem('gemini_api_key', apiKey);
+    }
     send({
       event: 'start_session',
       tutorial_id: selectedTutorialId,
       student_id: 'student_1',
       execution_mode: executionMode,
       brain_model: brainModel,
+      api_key: apiKey,
     });
-  }, [send, executionMode, brainModel, selectedTutorialId]);
+  }, [send, executionMode, brainModel, selectedTutorialId, apiKey]);
 
   // Send confirmation
   const handleConfirm = useCallback((response) => {
@@ -428,10 +434,23 @@ export default function App() {
                   </label>
                 ))}
               </div>
+              <div className="api-key-section">
+                <label className="mode-selector-label">Gemini API Key:</label>
+                <input
+                  type="password"
+                  placeholder="Enter your Gemini API key"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="upload-input"
+                />
+                <span className="api-key-hint">
+                  Get your key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>
+                </span>
+              </div>
               <button
                 className="start-btn"
                 onClick={handleStartSession}
-                disabled={!isConnected || !selectedTutorialId}
+                disabled={!isConnected || !selectedTutorialId || !apiKey}
               >
                 Start Course
               </button>
