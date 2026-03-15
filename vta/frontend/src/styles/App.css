@@ -621,6 +621,19 @@ body {
   flex: 1;
 }
 
+.toggle-upload-active {
+  background: rgba(79, 70, 229, 0.15) !important;
+  border-style: solid !important;
+  color: #a5b4fc !important;
+}
+
+.upload-hint {
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
 /* Curriculum Builder */
 .curriculum-builder { padding: 16px; overflow-y: auto; max-height: 100%; }
 .cb-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }

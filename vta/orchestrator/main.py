@@ -144,26 +144,36 @@ async def upload_tutorial(
         curriculum_data["pdf_s3_key"] = pdf_filename
         curriculum_data["pdf_url"] = ""
     else:
-        # Auto-generate curriculum — use Gemini to analyze PDF and create tasks
-        # For now, create a simple placeholder curriculum
+        # Count PDF pages and auto-generate one theory task per slide
+        try:
+            import fitz
+            doc = fitz.open(pdf_path)
+            page_count = len(doc)
+            doc.close()
+        except Exception:
+            page_count = 1
+
+        tasks_list = []
+        for i in range(page_count):
+            tasks_list.append({
+                "task_id": f"T{i + 1}",
+                "type": "theory",
+                "title": f"Slide {i + 1}",
+                "slide_number": i + 1,
+                "slide_context": None,
+                "sonic_prompt": None,
+                "subtasks": [],
+            })
+
         curriculum_data = {
             "tutorial_id": tutorial_id,
             "title": title,
             "description": f"Tutorial: {title}",
             "pdf_s3_key": pdf_filename,
             "pdf_url": "",
-            "tasks": [
-                {
-                    "task_id": "T1",
-                    "type": "theory",
-                    "title": title,
-                    "slide_number": 1,
-                    "slide_context": f"Welcome to {title}. Follow along with the slides as ARIA guides you through the material.",
-                    "sonic_prompt": None,
-                    "subtasks": [],
-                }
-            ],
+            "tasks": tasks_list,
         }
+        logger.info(f"Auto-generated {page_count} theory tasks for '{title}'")
 
     curriculum_path = os.path.join(curriculum_dir, f"{tutorial_id}.json")
     with open(curriculum_path, "w") as f:

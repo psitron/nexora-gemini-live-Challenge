@@ -83,7 +83,7 @@ export default function App() {
   const [uploadTitle, setUploadTitle] = useState('');
   const [uploading, setUploading] = useState(false);
   const [availableTutorials, setAvailableTutorials] = useState([]);
-  const [showUploadForm, setShowUploadForm] = useState(false);
+  const [showUploadForm, setShowUploadForm] = useState(null); // null | 'slides' | 'curriculum'
   const [showBuilder, setShowBuilder] = useState(false);
 
   // Model configuration state
@@ -264,7 +264,7 @@ export default function App() {
       setUploadedFile(null);
       setUploadedCurriculum(null);
       setUploadTitle('');
-      setShowUploadForm(false);
+      setShowUploadForm(null);
       alert(`Course "${data.title}" uploaded successfully!`);
     } catch (err) {
       console.error('Upload failed:', err);
@@ -464,11 +464,13 @@ export default function App() {
             onConfirm={handleConfirm}
           />
 
-          <MicrophoneInput
-            isMicActive={isMicActive}
-            onStart={startMic}
-            onStop={stopMic}
-          />
+          {sessionId && !sessionComplete && (
+            <MicrophoneInput
+              isMicActive={isMicActive}
+              onStart={startMic}
+              onStop={stopMic}
+            />
+          )}
 
           {sessionId && !sessionComplete && (
             <div className="ready-button-bar">
@@ -523,18 +525,49 @@ export default function App() {
                 ))}
               </div>
 
-              {/* Upload New Course */}
+              {/* Course Action Buttons */}
               <div className="course-action-buttons">
                 <button className="toggle-upload-btn" onClick={() => setShowBuilder(true)}>
                   Create Course
                 </button>
-                <button className="toggle-upload-btn" onClick={() => setShowUploadForm(!showUploadForm)}>
-                  {showUploadForm ? 'Cancel' : 'Upload Existing'}
+                <button
+                  className={`toggle-upload-btn ${showUploadForm === 'slides' ? 'toggle-upload-active' : ''}`}
+                  onClick={() => setShowUploadForm(showUploadForm === 'slides' ? null : 'slides')}
+                >
+                  Import from Slides
+                </button>
+                <button
+                  className={`toggle-upload-btn ${showUploadForm === 'curriculum' ? 'toggle-upload-active' : ''}`}
+                  onClick={() => setShowUploadForm(showUploadForm === 'curriculum' ? null : 'curriculum')}
+                >
+                  Import with Curriculum
                 </button>
               </div>
 
-              {showUploadForm && (
+              {showUploadForm === 'slides' && (
                 <div className="upload-section">
+                  <div className="upload-hint">Upload a PDF — one theory task will be auto-generated per slide. Nexora will use AI vision to narrate each slide.</div>
+                  <div className="upload-row">
+                    <label className="upload-label">Course Title:</label>
+                    <input type="text" className="upload-input" placeholder="e.g. Introduction to Python" value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} />
+                  </div>
+                  <div className="upload-row">
+                    <label className="upload-label">
+                      Slides (PDF):
+                      <input type="file" accept=".pdf" onChange={(e) => setUploadedFile(e.target.files[0])} />
+                    </label>
+                  </div>
+                  {uploadedFile && (
+                    <button className="upload-btn" onClick={handleUpload} disabled={uploading}>
+                      {uploading ? 'Importing...' : 'Import Slides'}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {showUploadForm === 'curriculum' && (
+                <div className="upload-section">
+                  <div className="upload-hint">Upload a PDF and a curriculum JSON file that defines tasks, subtasks, and narration.</div>
                   <div className="upload-row">
                     <label className="upload-label">
                       Slides (PDF):
@@ -543,13 +576,13 @@ export default function App() {
                   </div>
                   <div className="upload-row">
                     <label className="upload-label">
-                      Curriculum (JSON, optional):
+                      Curriculum (JSON):
                       <input type="file" accept=".json" onChange={(e) => setUploadedCurriculum(e.target.files[0])} />
                     </label>
                   </div>
-                  {uploadedFile && (
+                  {uploadedFile && uploadedCurriculum && (
                     <button className="upload-btn" onClick={handleUpload} disabled={uploading}>
-                      {uploading ? 'Uploading...' : 'Upload Course'}
+                      {uploading ? 'Importing...' : 'Import Course'}
                     </button>
                   )}
                 </div>
