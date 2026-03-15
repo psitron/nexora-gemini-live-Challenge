@@ -436,15 +436,29 @@ class GeminiLiveClient:
     async def wait_for_speech_done(self, timeout: float = 90):
         self._transcript_buffer.clear()
         self._transcript_event.clear()
-        # Don't clear _speech_done if already set — speech may have finished
-        # before we got here (fast responses or session already closed)
         if self._speech_done.is_set():
             logger.info("Speech already done (detected before wait)")
             return
-        try:
-            await asyncio.wait_for(self._speech_done.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
-            logger.warning(f"Speech timeout ({timeout}s)")
+        # Check every 1 second — bail early if session died and no speech started
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                await asyncio.wait_for(self._speech_done.wait(), timeout=1.0)
+                return  # Speech done
+            except asyncio.TimeoutError:
+                if not self.is_active or not self._session:
+                    if self._last_audio_output_time == 0.0:
+                        # Session died before any speech was produced — bail immediately
+                        logger.warning("Session died before speech started — skipping wait")
+                        return
+                    # Session died but speech was partially produced — wait a bit more
+                    # in case speech_done just hasn't been detected yet
+                    await asyncio.sleep(0.5)
+                    if self._speech_done.is_set():
+                        return
+                    logger.warning("Session died after partial speech — proceeding")
+                    return
+        logger.warning(f"Speech timeout ({timeout}s)")
 
     async def wait_for_playback_done(self, timeout: float = 15.0):
         try:
