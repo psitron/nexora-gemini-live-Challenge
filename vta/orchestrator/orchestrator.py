@@ -498,29 +498,50 @@ async def execute_desktop_vision_task(
 
     desktop_loop = _get_desktop_vision_loop(model_id=model_id)
 
+    subtask_results = []
+
     if subtasks:
         for subtask in subtasks:
             subtask_id = subtask["subtask_id"]
             subtask_goal = subtask.get("goal", subtask["title"])
+            subtask_title = subtask.get("title", subtask_id)
 
             await ws_send({"event": "subtask_started", "subtask_id": subtask_id})
 
-            # Skip per-subtask narration — go straight to action (faster)
             logger.info(f"Desktop vision: {subtask_id} — {subtask_goal}")
             result = await desktop_loop.run(goal=subtask_goal, agent=agent, ws_send=ws_send)
             logger.info(f"Subtask {subtask_id}: success={result.success} — {result.message}")
+            subtask_results.append((subtask_title, result))
+
+            # Narrate what just happened so the student knows the step is done
+            step_result_text = result.message if result.success else f"I was unable to complete this step: {result.message}"
+            step_done_prompt = (
+                f"Speak ONLY these exact words, nothing more. Do not elaborate, ask questions, or add anything:\n\n"
+                f"{step_result_text}"
+            )
+            await sonic.reconnect(prompt_override=step_done_prompt)
+            await sonic.send_text_kickstart("Please begin.")
+            await sonic.wait_for_speech_done(timeout=30)
 
             await ws_send({"event": "subtask_completed", "subtask_id": subtask_id})
     else:
         goal = task.get("goal", task.get("title", "complete the task"))
         logger.info(f"Desktop vision: {goal}")
         result = await desktop_loop.run(goal=goal, agent=agent, ws_send=ws_send)
+        subtask_results.append((task.get("title", "task"), result))
 
-    # Summary
-    closing = "Any questions, or say ready to continue." if not is_last else ""
+    # Summary — use actual results instead of generic text
+    all_success = all(r.success for _, r in subtask_results)
+    if all_success:
+        summary_text = f"All steps completed successfully."
+    else:
+        failed = [title for title, r in subtask_results if not r.success]
+        summary_text = f"Some steps had issues: {', '.join(failed)}."
+
+    closing = " Any questions, or say ready to continue." if not is_last else ""
     summary_prompt = (
         f"Speak ONLY these exact words, nothing more. Do not elaborate, ask questions, or add anything:\n\n"
-        f"That completes the demonstration. {closing}"
+        f"{summary_text}{closing}"
     )
     await ws_send({"event": "aria_thinking"})
     await sonic.reconnect(prompt_override=summary_prompt)
@@ -571,12 +592,15 @@ async def execute_vision_task(
 
     vision_loop = _get_vision_loop(model_id=model_id)
 
+    subtask_results = []
+
     if subtasks:
-        # 2a. Run each subtask: narrate then vision loop
+        # 2a. Run each subtask: narrate intro → vision loop → narrate result
         for subtask in subtasks:
             subtask_id = subtask["subtask_id"]
             subtask_goal = subtask.get("goal", subtask["title"])
             subtask_prompt = subtask.get("sonic_prompt", subtask["title"])
+            subtask_title = subtask.get("title", subtask_id)
 
             await ws_send({"event": "subtask_started", "subtask_id": subtask_id})
 
@@ -592,6 +616,17 @@ async def execute_vision_task(
             logger.info(f"Vision loop for subtask {subtask_id}: {subtask_goal}")
             result = await vision_loop.run(goal=subtask_goal, agent=agent, ws_send=ws_send)
             logger.info(f"Subtask {subtask_id} result: success={result.success} — {result.message}")
+            subtask_results.append((subtask_title, result))
+
+            # Narrate what just happened so the student knows the step is done
+            step_result_text = result.message if result.success else f"I was unable to complete this step: {result.message}"
+            step_done_prompt = (
+                f"Speak ONLY these exact words, nothing more. Do not elaborate, ask questions, or add anything:\n\n"
+                f"{step_result_text}"
+            )
+            await sonic.reconnect(prompt_override=step_done_prompt)
+            await sonic.send_text_kickstart("Please begin.")
+            await sonic.wait_for_speech_done(timeout=30)
 
             await ws_send({"event": "subtask_completed", "subtask_id": subtask_id})
     else:
@@ -599,12 +634,20 @@ async def execute_vision_task(
         goal = task.get("goal", task.get("title", "complete the task"))
         logger.info(f"Starting vision loop for goal: {goal}")
         result = await vision_loop.run(goal=goal, agent=agent, ws_send=ws_send)
+        subtask_results.append((task.get("title", "task"), result))
 
-    # 3. Summary narration
-    closing = "Any questions, or say ready to continue." if not is_last else ""
+    # 3. Summary narration — use actual results
+    all_success = all(r.success for _, r in subtask_results)
+    if all_success:
+        summary_text = f"All steps completed successfully."
+    else:
+        failed = [title for title, r in subtask_results if not r.success]
+        summary_text = f"Some steps had issues: {', '.join(failed)}."
+
+    closing = " Any questions, or say ready to continue." if not is_last else ""
     summary_prompt = (
         f"Speak ONLY these exact words, nothing more. Do not elaborate, ask questions, or add anything:\n\n"
-        f"That completes the demonstration. {closing}"
+        f"{summary_text}{closing}"
     )
     await ws_send({"event": "aria_thinking"})
     await sonic.reconnect(prompt_override=summary_prompt)
