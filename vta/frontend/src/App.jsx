@@ -75,7 +75,7 @@ export default function App() {
   const [tutorialTitle, setTutorialTitle] = useState('');
   const [pdfUrl, setPdfUrl] = useState('');
   const [executionMode, setExecutionMode] = useState('demo_only');
-  const [brainModel, setBrainModel] = useState('flash');
+  const [brainModel, setBrainModel] = useState(localStorage.getItem('vta_brain_model') || 'flash');
   const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
   const [selectedTutorialId, setSelectedTutorialId] = useState(null);
   const [uploadedFile, setUploadedFile] = useState(null);
@@ -88,11 +88,12 @@ export default function App() {
 
   // Model configuration state
   const [showModelConfig, setShowModelConfig] = useState(false);
-  const [desktopVisionModel, setDesktopVisionModel] = useState('gemini-3-flash-preview');
-  const [customDesktopVisionModel, setCustomDesktopVisionModel] = useState('');
-  const [browserVisionModel, setBrowserVisionModel] = useState('gemini-3-flash-preview');
-  const [customBrowserVisionModel, setCustomBrowserVisionModel] = useState('');
-  const [customBrainModel, setCustomBrainModel] = useState('');
+  const [configSaved, setConfigSaved] = useState(false);
+  const [desktopVisionModel, setDesktopVisionModel] = useState(localStorage.getItem('vta_desktop_vision_model') || 'gemini-3-flash-preview');
+  const [customDesktopVisionModel, setCustomDesktopVisionModel] = useState(localStorage.getItem('vta_custom_desktop_vision_model') || '');
+  const [browserVisionModel, setBrowserVisionModel] = useState(localStorage.getItem('vta_browser_vision_model') || 'gemini-3-flash-preview');
+  const [customBrowserVisionModel, setCustomBrowserVisionModel] = useState(localStorage.getItem('vta_custom_browser_vision_model') || '');
+  const [customBrainModel, setCustomBrainModel] = useState(localStorage.getItem('vta_custom_brain_model') || '');
 
   // UI state
   const [messages, setMessages] = useState([]);
@@ -285,11 +286,22 @@ export default function App() {
     }
   }, [selectedTutorialId]);
 
+  // Save configuration to localStorage
+  const handleSaveConfig = useCallback(() => {
+    localStorage.setItem('gemini_api_key', apiKey);
+    localStorage.setItem('vta_brain_model', brainModel);
+    localStorage.setItem('vta_desktop_vision_model', desktopVisionModel);
+    localStorage.setItem('vta_custom_desktop_vision_model', customDesktopVisionModel);
+    localStorage.setItem('vta_browser_vision_model', browserVisionModel);
+    localStorage.setItem('vta_custom_browser_vision_model', customBrowserVisionModel);
+    localStorage.setItem('vta_custom_brain_model', customBrainModel);
+    setConfigSaved(true);
+    setTimeout(() => setConfigSaved(false), 2000);
+  }, [apiKey, brainModel, desktopVisionModel, customDesktopVisionModel,
+      browserVisionModel, customBrowserVisionModel, customBrainModel]);
+
   // Start session
   const handleStartSession = useCallback(() => {
-    if (apiKey) {
-      localStorage.setItem('gemini_api_key', apiKey);
-    }
     const effectiveBrain = brainModel === 'custom' ? customBrainModel : brainModel;
     const effectiveDesktopVision = desktopVisionModel === 'custom' ? customDesktopVisionModel : desktopVisionModel;
     const effectiveBrowserVision = browserVisionModel === 'custom' ? customBrowserVisionModel : browserVisionModel;
@@ -460,6 +472,13 @@ export default function App() {
                   disabled={!!sessionId}
                 />
               )}
+            </div>
+
+            <div className="config-save-section">
+              <button className="config-save-btn" onClick={handleSaveConfig}>
+                Save Configuration
+              </button>
+              {configSaved && <span className="config-saved-msg">Settings saved</span>}
             </div>
           </div>
         </div>
