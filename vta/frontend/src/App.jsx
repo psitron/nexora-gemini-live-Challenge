@@ -510,16 +510,7 @@ export default function App() {
             />
           )}
 
-          {sessionId && !sessionComplete && (
-            <div className="ready-button-bar">
-              <button
-                className="ready-btn"
-                onClick={() => send({ event: 'student_confirmation', response: 'ready', session_id: sessionId })}
-              >
-                ▶ Ready / Next
-              </button>
-            </div>
-          )}
+          {/* Ready/Next button hidden — voice interaction only */}
 
           {!sessionId && showBuilder && (
             <CurriculumBuilder
