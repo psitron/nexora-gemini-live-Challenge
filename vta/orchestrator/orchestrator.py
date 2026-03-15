@@ -517,7 +517,12 @@ async def execute_desktop_vision_task(
             # Narrate what just happened in a friendly, natural way
             # Include closing question in the LAST subtask narration to avoid extra reconnect
             is_last_subtask = (subtask == subtasks[-1]) if subtasks else True
-            closing_addition = " Any questions, or say ready to continue." if (is_last_subtask and not is_last) else ""
+            if is_last_subtask and is_last:
+                closing_addition = " That was our final step in this tutorial."
+            elif is_last_subtask:
+                closing_addition = " Any questions, or say ready to continue."
+            else:
+                closing_addition = ""
 
             if result.success:
                 step_done_prompt = (
@@ -615,7 +620,12 @@ async def execute_vision_task(
             logger.info(f"Subtask {subtask_id} result: success={result.success} — {result.message}")
             # Narrate what just happened — include closing in last subtask
             is_last_subtask = (subtask == subtasks[-1]) if subtasks else True
-            closing_addition = " Any questions, or say ready to continue." if (is_last_subtask and not is_last) else ""
+            if is_last_subtask and is_last:
+                closing_addition = " That was our final step in this tutorial."
+            elif is_last_subtask:
+                closing_addition = " Any questions, or say ready to continue."
+            else:
+                closing_addition = ""
 
             if result.success:
                 step_done_prompt = (
