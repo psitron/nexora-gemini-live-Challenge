@@ -68,6 +68,7 @@ class GeminiLiveClient:
 
         self._playback_done_event = asyncio.Event()
         self._playback_done_event.set()
+        self._session_resumption_handle = None  # For session resumption
 
         self._mic_enabled = False
         self._output_transcript_buffer: list = []
@@ -104,6 +105,9 @@ class GeminiLiveClient:
                 ),
                 input_audio_transcription=types.AudioTranscriptionConfig(),
                 output_audio_transcription=types.AudioTranscriptionConfig(),
+                session_resumption=types.SessionResumptionConfig(
+                    handle=self._session_resumption_handle,
+                ),
             )
 
             self._session_ctx = self._genai_client.aio.live.connect(
@@ -197,6 +201,9 @@ class GeminiLiveClient:
                 ),
                 input_audio_transcription=types.AudioTranscriptionConfig(),
                 output_audio_transcription=types.AudioTranscriptionConfig(),
+                session_resumption=types.SessionResumptionConfig(
+                    handle=self._session_resumption_handle,
+                ),
             )
             ctx = self._genai_client.aio.live.connect(
                 model=GEMINI_LIVE_MODEL,
@@ -361,6 +368,16 @@ class GeminiLiveClient:
         self._transcript_buffer.clear()
         self._transcript_event.clear()
         self._output_enabled = False  # Suppress any auto-response while listening
+
+        # Signal end of previous audio stream before listening.
+        # This tells the server we're transitioning to a new input stream
+        # and prevents accumulated silence from being treated as inactivity.
+        try:
+            if self._session:
+                await self._session.send_realtime_input(audio_stream_end=True)
+        except Exception:
+            pass
+
         self.enable_mic()
 
         try:
@@ -489,6 +506,12 @@ class GeminiLiveClient:
                 if not self.is_active:
                     break
 
+                # Capture session resumption handle for transparent reconnection
+                if hasattr(response, 'session_resumption_update') and response.session_resumption_update:
+                    handle = getattr(response.session_resumption_update, 'new_handle', None)
+                    if handle:
+                        self._session_resumption_handle = handle
+
                 if response.server_content:
                     sc = response.server_content
 
@@ -513,12 +536,18 @@ class GeminiLiveClient:
                                 b64 = base64.b64encode(bytes(self._audio_out_buffer)).decode()
                                 self._audio_out_buffer.clear()
                                 await self.audio_output_callback(b64)
-                            # Transcript already streamed word-by-word above
                             self._output_transcript_buffer.clear()
                         else:
-                            # Discard unsolicited output
                             self._audio_out_buffer.clear()
                             self._output_transcript_buffer.clear()
+
+                        # Signal end of current audio stream so server doesn't
+                        # treat accumulated silence as inactivity and close.
+                        try:
+                            if self._session:
+                                await self._session.send_realtime_input(audio_stream_end=True)
+                        except Exception:
+                            pass
 
                     if sc.input_transcription and sc.input_transcription.text:
                         user_text = sc.input_transcription.text.strip()
