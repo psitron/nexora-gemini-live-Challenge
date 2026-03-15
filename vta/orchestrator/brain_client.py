@@ -59,16 +59,26 @@ class BrainClient:
 
         prompt = f"""Classify the student's speech into one of these intents:
 - "continue" — student wants to move on (yes, ready, next, etc.)
-- "repeat" — student wants to hear the explanation again
-- "question" — student is asking a question about the material
+- "repeat" — student wants to see/hear the task demonstrated again
+- "question" — student is asking a question about the material (wants a verbal answer)
+- "freestyle" — student is asking the AI to DO something on the computer (run a command, open an app, show something on screen). This is NOT a question — the student wants ACTION, not explanation.
 - "wait" — student needs more time or is not ready
 - "skip" — student wants to skip this section
+
+Examples of "freestyle":
+- "Can you run docker ps?" → freestyle, goal: "Run docker ps in the terminal"
+- "Show me how to open a text editor" → freestyle, goal: "Open a text editor on the desktop"
+- "Can you create a file called test.py?" → freestyle, goal: "Create a file called test.py"
+
+Examples of "question":
+- "What does the ls command do?" → question
+- "Why do we use Python for this?" → question
 
 Student said: "{transcript}"
 Task context: {task_context}
 
 Respond with ONLY a JSON object, no other text:
-{{"action": "<intent>", "question_text": "<the question if intent is question, else empty string>"}}"""
+{{"action": "<intent>", "question_text": "<the question if intent is question, else empty>", "goal": "<the goal to execute on screen if intent is freestyle, else empty>"}}"""
 
         try:
             response = await self.client.aio.models.generate_content(

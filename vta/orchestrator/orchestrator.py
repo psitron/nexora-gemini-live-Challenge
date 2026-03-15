@@ -232,7 +232,10 @@ async def run_tutorial(
         # (skip for last task — no need to confirm after final task)
         if not is_last:
             task_context = f"Task: {task['title']} ({task['type']})"
-            await handle_student_response(transcript, task, task_context, sonic, brain, ws_send)
+            await handle_student_response(
+                transcript, task, task_context, sonic, brain, ws_send,
+                agent=agent, desktop_vision_model=desktop_vision_model,
+            )
 
     # Tutorial complete
     complete_prompt = "You are Nexora. Tell the student they've completed the tutorial. Congratulate them briefly."
@@ -683,16 +686,17 @@ async def handle_student_response(
     sonic: SonicClient,
     brain: BrainClient,
     ws_send: Callable,
+    agent: AgentS3Client = None,
+    desktop_vision_model: str = None,
 ):
     """
     Loop until student says ready to move on.
-    Handles unlimited questions — never advances on timeout alone.
+    Handles questions, repeat (re-run vision tasks), and freestyle (ad-hoc actions).
     """
     # Empty transcript means Sonic stream died and student never spoke.
-    # Don't silently advance — wait for student to actually respond.
     if not transcript:
         logger.info("No student response — waiting for student to speak")
-        transcript = await sonic.wait_for_student_speech(timeout=0)  # no timeout
+        transcript = await sonic.wait_for_student_speech(timeout=0)
         if not transcript:
             return
 
@@ -714,35 +718,129 @@ async def handle_student_response(
             answer = await brain.answer_question(question_text, task_context)
             answer_prompt = (
                 f"You are Nexora. Answer this question: {answer}\n"
-                f"Then ask: 'Any more questions or ready to move on?' Then listen."
+                f"Then ask: 'Any more questions, or say ready to move on.' Then listen."
             )
             await ws_send({"event": "aria_thinking"})
             await sonic_speak(sonic, answer_prompt, timeout=45)
             await ws_send({"event": "aria_listening"})
-            transcript = await sonic.wait_for_student_speech(timeout=0)  # no timeout
+            transcript = await sonic.wait_for_student_speech(timeout=0)
 
         elif action == "repeat":
             logger.info(f"Student requested repeat of {task['task_id']}")
-            # Re-read the full slide content, not just a summary
-            slide_context = task.get("slide_context", "") or task.get("title", "")
-            if len(slide_context) > 1200:
-                slide_context = slide_context[:1200] + "..."
-            repeat_prompt = (
-                f"You are Nexora. The student wants to hear this again. "
-                f"Read the following content clearly:\n\n{slide_context}\n\n"
-                f"Then ask: 'Any questions or ready to move on?' Then listen."
+            task_type = task.get("type", "")
+
+            if task_type in ("vision", "vision_driven", "desktop_vision") and agent:
+                # Re-run vision task — let AI see the screen and adapt
+                repeat_intro = (
+                    f"You are Nexora, a friendly tutor. Say: 'Sure, let me show you that again.' "
+                    f"Say only that, nothing more."
+                )
+                await ws_send({"event": "aria_thinking"})
+                await sonic_speak(sonic, repeat_intro, timeout=20)
+                await ws_send({"event": "show_desktop"})
+
+                desktop_loop = _get_desktop_vision_loop(model_id=desktop_vision_model)
+                subtasks = task.get("subtasks", [])
+                if subtasks:
+                    for subtask in subtasks:
+                        subtask_title = subtask.get("title", "")
+                        subtask_goal = subtask.get("goal", subtask_title)
+                        # Add hint that this is a repeat — AI should adapt to current screen state
+                        repeat_goal = (
+                            f"{subtask_goal}\n"
+                            f"NOTE: This is a repeat. The screen may already show the result from before. "
+                            f"Adapt to the current state — if the goal is already achieved, report done."
+                        )
+                        result = await desktop_loop.run(goal=repeat_goal, agent=agent, ws_send=ws_send)
+                        logger.info(f"Repeat {subtask.get('subtask_id')}: {result.success} — {result.message}")
+
+                        # Narrate result naturally
+                        if result.success:
+                            narrate_prompt = (
+                                f"You are Nexora, a friendly tutor. The step '{subtask_title}' just completed. "
+                                f"The result was: {result.message}\n\n"
+                                f"Summarize in ONE short, friendly sentence for a beginner. No technical jargon."
+                            )
+                        else:
+                            narrate_prompt = (
+                                f"You are Nexora. The step '{subtask_title}' had an issue: {result.message}\n\n"
+                                f"Explain in ONE short, friendly sentence. Be encouraging."
+                            )
+                        await sonic.reconnect(prompt_override=narrate_prompt)
+                        await sonic.send_text_kickstart("Please begin.")
+                        await sonic.wait_for_speech_done(timeout=30)
+                else:
+                    goal = task.get("goal", task.get("title", ""))
+                    result = await desktop_loop.run(goal=goal, agent=agent, ws_send=ws_send)
+
+                closing_prompt = (
+                    f"Speak ONLY these exact words, nothing more:\n\n"
+                    f"Any more questions, or say ready to move on."
+                )
+                await sonic.reconnect(prompt_override=closing_prompt)
+                await sonic.send_text_kickstart("Please begin.")
+                await sonic.wait_for_speech_done(timeout=20)
+                await ws_send({"event": "aria_listening"})
+                transcript = await sonic.wait_for_student_speech(timeout=0)
+
+            else:
+                # Theory/practical — re-read the slide content
+                slide_context = task.get("slide_context", "") or task.get("title", "")
+                if len(slide_context) > 1200:
+                    slide_context = slide_context[:1200] + "..."
+                repeat_prompt = (
+                    f"You are Nexora. The student wants to hear this again. "
+                    f"Read the following content clearly:\n\n{slide_context}\n\n"
+                    f"Then ask: 'Any questions or ready to move on?' Then listen."
+                )
+                await ws_send({"event": "aria_thinking"})
+                await sonic_speak(sonic, repeat_prompt, timeout=45)
+                await ws_send({"event": "aria_listening"})
+                transcript = await sonic.wait_for_student_speech(timeout=0)
+
+        elif action == "freestyle" and agent:
+            # Student wants the AI to DO something on screen (not just answer verbally)
+            freestyle_goal = intent.get("goal", "") or transcript
+            logger.info(f"Freestyle request: {freestyle_goal}")
+
+            freestyle_intro = (
+                f"You are Nexora, a friendly tutor. Say: 'Sure, let me do that for you.' "
+                f"Say only that, nothing more."
             )
             await ws_send({"event": "aria_thinking"})
-            await sonic_speak(sonic, repeat_prompt, timeout=45)
+            await sonic_speak(sonic, freestyle_intro, timeout=20)
+            await ws_send({"event": "show_desktop"})
+
+            desktop_loop = _get_desktop_vision_loop(model_id=desktop_vision_model)
+            result = await desktop_loop.run(goal=freestyle_goal, agent=agent, ws_send=ws_send)
+            logger.info(f"Freestyle result: {result.success} — {result.message}")
+
+            # Narrate the result naturally
+            if result.success:
+                narrate_prompt = (
+                    f"You are Nexora, a friendly tutor. You just did something for the student. "
+                    f"The result was: {result.message}\n\n"
+                    f"Summarize in ONE short, friendly sentence. No jargon. "
+                    f"Then ask: 'Anything else you'd like me to show, or say ready to continue.'"
+                )
+            else:
+                narrate_prompt = (
+                    f"You are Nexora, a friendly tutor. You tried to help but ran into an issue: {result.message}\n\n"
+                    f"Explain in ONE short, friendly sentence. Be encouraging. "
+                    f"Then ask: 'Want me to try something else, or say ready to continue.'"
+                )
+            await sonic.reconnect(prompt_override=narrate_prompt)
+            await sonic.send_text_kickstart("Please begin.")
+            await sonic.wait_for_speech_done(timeout=30)
             await ws_send({"event": "aria_listening"})
-            transcript = await sonic.wait_for_student_speech(timeout=0)  # no timeout
+            transcript = await sonic.wait_for_student_speech(timeout=0)
 
         elif action == "wait":
             logger.info("Student needs more time — waiting for them to speak")
             wait_prompt = "You are Nexora. Say: 'Take your time.' Then listen."
             await sonic_speak(sonic, wait_prompt, timeout=20)
             await ws_send({"event": "aria_listening"})
-            transcript = await sonic.wait_for_student_speech(timeout=0)  # no timeout
+            transcript = await sonic.wait_for_student_speech(timeout=0)
 
         else:
             return
