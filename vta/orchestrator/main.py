@@ -295,6 +295,8 @@ async def _handle_start_session(msg: dict, websocket: WebSocket) -> str:
     student_id = msg.get("student_id", "anonymous")
     execution_mode = msg.get("execution_mode", None)
     brain_model = msg.get("brain_model", None)
+    browser_vision_model = msg.get("browser_vision_model", None)
+    desktop_vision_model = msg.get("desktop_vision_model", None)
     api_key = msg.get("api_key", None)
 
     # Set API key from frontend if provided
@@ -375,7 +377,9 @@ async def _handle_start_session(msg: dict, websocket: WebSocket) -> str:
     # Start tutorial execution in background
     asyncio.create_task(
         _run_tutorial_task(session_id, tutorial_id, sonic, agent_s3,
-                           brain, confirmation_mgr, ws_send, exec_config)
+                           brain, confirmation_mgr, ws_send, exec_config,
+                           browser_vision_model=browser_vision_model,
+                           desktop_vision_model=desktop_vision_model)
     )
 
     return session_id
@@ -390,6 +394,8 @@ async def _run_tutorial_task(
     confirmation_mgr: ConfirmationManager,
     ws_send,
     exec_config,
+    browser_vision_model: str = None,
+    desktop_vision_model: str = None,
 ):
     """Run the tutorial in a background task."""
     try:
@@ -402,6 +408,8 @@ async def _run_tutorial_task(
             confirmation_mgr=confirmation_mgr,
             ws_send=ws_send,
             exec_config=exec_config,
+            browser_vision_model=browser_vision_model,
+            desktop_vision_model=desktop_vision_model,
         )
     except Exception as e:
         logger.error(f"Tutorial execution error: {e}", exc_info=True)

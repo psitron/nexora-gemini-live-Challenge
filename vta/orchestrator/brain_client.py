@@ -42,7 +42,7 @@ class BrainClient:
 
     def __init__(self, model_key: str = "flash"):
         self.client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-        self.model_id = self.MODEL_MAP.get(model_key, self.MODEL_MAP["flash"])
+        self.model_id = self.MODEL_MAP.get(model_key, model_key)
         logger.info(f"BrainClient initialized: model={model_key} ({self.model_id})")
 
     async def classify_intent(self, transcript: str, task_context: str = "") -> dict:

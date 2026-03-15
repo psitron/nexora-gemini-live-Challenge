@@ -56,17 +56,17 @@ _vision_loop: Optional[VisionLoop] = None
 _desktop_vision_loop: Optional[DesktopVisionLoop] = None
 
 
-def _get_vision_loop() -> VisionLoop:
+def _get_vision_loop(model_id: str = None) -> VisionLoop:
     global _vision_loop
     if _vision_loop is None:
-        _vision_loop = VisionLoop()
+        _vision_loop = VisionLoop(model_id=model_id)
     return _vision_loop
 
 
-def _get_desktop_vision_loop() -> DesktopVisionLoop:
+def _get_desktop_vision_loop(model_id: str = None) -> DesktopVisionLoop:
     global _desktop_vision_loop
     if _desktop_vision_loop is None:
-        _desktop_vision_loop = DesktopVisionLoop()
+        _desktop_vision_loop = DesktopVisionLoop(model_id=model_id)
     return _desktop_vision_loop
 
 
@@ -138,6 +138,8 @@ async def run_tutorial(
     confirmation_mgr: ConfirmationManager,
     ws_send: Callable,
     exec_config: ExecutionConfig = None,
+    browser_vision_model: str = None,
+    desktop_vision_model: str = None,
 ):
     """Main loop - runs the full tutorial from start to finish."""
     curriculum = get_curriculum_manager()
@@ -214,10 +216,12 @@ async def run_tutorial(
             goal_text = _extract_goal_text(task)
             if _is_browser_task(goal_text):
                 logger.info(f"Auto-detected: BROWSER vision (goal contains URL/web keywords)")
-                transcript = await execute_vision_task(task, sonic, agent, brain, ws_send, is_last)
+                transcript = await execute_vision_task(task, sonic, agent, brain, ws_send, is_last,
+                                                       model_id=browser_vision_model)
             else:
                 logger.info(f"Auto-detected: DESKTOP vision (no browser keywords)")
-                transcript = await execute_desktop_vision_task(task, sonic, agent, brain, ws_send, is_last)
+                transcript = await execute_desktop_vision_task(task, sonic, agent, brain, ws_send, is_last,
+                                                               model_id=desktop_vision_model)
         else:
             transcript = ""
 
@@ -466,6 +470,7 @@ async def execute_desktop_vision_task(
     brain: BrainClient,
     ws_send: Callable,
     is_last: bool = False,
+    model_id: str = None,
 ) -> str:
     """
     Desktop vision task: AI sees the desktop screen via Agent S3 screenshots
@@ -491,7 +496,7 @@ async def execute_desktop_vision_task(
     await sonic.send_text_kickstart("Please begin.")
     await sonic.wait_for_speech_done(timeout=30)
 
-    desktop_loop = _get_desktop_vision_loop()
+    desktop_loop = _get_desktop_vision_loop(model_id=model_id)
 
     if subtasks:
         for subtask in subtasks:
@@ -535,6 +540,7 @@ async def execute_vision_task(
     brain: BrainClient,
     ws_send: Callable,
     is_last: bool = False,
+    model_id: str = None,
 ) -> str:
     """
     Vision-driven task: Nexora narrates the goal, the autonomous vision loop
@@ -563,7 +569,7 @@ async def execute_vision_task(
     await sonic.wait_for_speech_done(timeout=30)
     await sonic.wait_for_playback_done(timeout=10)
 
-    vision_loop = _get_vision_loop()
+    vision_loop = _get_vision_loop(model_id=model_id)
 
     if subtasks:
         # 2a. Run each subtask: narrate then vision loop

@@ -143,9 +143,9 @@ class DesktopVisionLoop:
     FunctionResponse format issues.
     """
 
-    def __init__(self):
+    def __init__(self, model_id: str = None):
         self._client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-        self._model = os.environ.get("GEMINI_VISION_MODEL", VISION_MODEL)
+        self._model = model_id or os.environ.get("GEMINI_VISION_MODEL", VISION_MODEL)
         logger.info(f"DesktopVisionLoop initialized — model: {self._model}")
 
     async def run(

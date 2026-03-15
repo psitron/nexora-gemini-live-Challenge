@@ -33,10 +33,37 @@ const EXECUTION_MODES = [
   },
 ];
 
-const BRAIN_MODELS = [
-  { value: 'flash', label: 'Gemini Flash', description: 'Gemini 3 Flash — fast intent & Q&A' },
-  { value: 'pro', label: 'Gemini Pro', description: 'Gemini 2.5 Pro — deeper reasoning' },
-];
+const MODEL_CONFIG = {
+  voice: {
+    label: 'Voice Model',
+    description: 'Real-time bidirectional audio for Nexora\'s voice. Speaks instructions and listens to student responses.',
+    fixedId: 'gemini-2.5-flash-native-audio-preview-12-2025',
+  },
+  brain: {
+    label: 'Brain Model',
+    description: 'Classifies student intent (continue, repeat, question), answers off-script questions, and generates slide explanations from images.',
+    presets: [
+      { value: 'flash', label: 'Gemini 3 Flash', id: 'gemini-3-flash-preview' },
+      { value: 'pro', label: 'Gemini 2.5 Pro', id: 'gemini-2.5-pro-preview-05-06' },
+    ],
+  },
+  desktopVision: {
+    label: 'Desktop Vision Model',
+    description: 'Plans desktop automation actions from screenshots. Sees the screen, decides what to click, type, or open — executed by Agent S3.',
+    presets: [
+      { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash' },
+      { value: 'gemini-2.5-pro-preview-05-06', label: 'Gemini 2.5 Pro' },
+    ],
+  },
+  browserVision: {
+    label: 'Browser Vision Model',
+    description: 'Controls the browser via Gemini Computer Use API. Navigates web pages, clicks elements, fills forms for web-based tutorial tasks.',
+    presets: [
+      { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash' },
+      { value: 'gemini-2.5-pro-preview-05-06', label: 'Gemini 2.5 Pro' },
+    ],
+  },
+};
 
 export default function App() {
   // Connection state
@@ -58,6 +85,14 @@ export default function App() {
   const [availableTutorials, setAvailableTutorials] = useState([]);
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [showBuilder, setShowBuilder] = useState(false);
+
+  // Model configuration state
+  const [showModelConfig, setShowModelConfig] = useState(false);
+  const [desktopVisionModel, setDesktopVisionModel] = useState('gemini-3-flash-preview');
+  const [customDesktopVisionModel, setCustomDesktopVisionModel] = useState('');
+  const [browserVisionModel, setBrowserVisionModel] = useState('gemini-3-flash-preview');
+  const [customBrowserVisionModel, setCustomBrowserVisionModel] = useState('');
+  const [customBrainModel, setCustomBrainModel] = useState('');
 
   // UI state
   const [messages, setMessages] = useState([]);
@@ -252,19 +287,25 @@ export default function App() {
 
   // Start session
   const handleStartSession = useCallback(() => {
-    // Save API key to localStorage for persistence
     if (apiKey) {
       localStorage.setItem('gemini_api_key', apiKey);
     }
+    const effectiveBrain = brainModel === 'custom' ? customBrainModel : brainModel;
+    const effectiveDesktopVision = desktopVisionModel === 'custom' ? customDesktopVisionModel : desktopVisionModel;
+    const effectiveBrowserVision = browserVisionModel === 'custom' ? customBrowserVisionModel : browserVisionModel;
     send({
       event: 'start_session',
       tutorial_id: selectedTutorialId,
       student_id: 'student_1',
       execution_mode: executionMode,
-      brain_model: brainModel,
+      brain_model: effectiveBrain,
+      desktop_vision_model: effectiveDesktopVision,
+      browser_vision_model: effectiveBrowserVision,
       api_key: apiKey,
     });
-  }, [send, executionMode, brainModel, selectedTutorialId, apiKey]);
+  }, [send, executionMode, brainModel, customBrainModel, desktopVisionModel,
+      customDesktopVisionModel, browserVisionModel, customBrowserVisionModel,
+      selectedTutorialId, apiKey]);
 
   // Send confirmation
   const handleConfirm = useCallback((response) => {
@@ -291,7 +332,7 @@ export default function App() {
               {EXECUTION_MODES.find(m => m.value === executionMode)?.label || executionMode}
             </span>
             <span className="brain-model-badge">
-              Brain: {BRAIN_MODELS.find(m => m.value === brainModel)?.label || brainModel}
+              Brain: {MODEL_CONFIG.brain.presets.find(m => m.value === brainModel)?.label || brainModel}
             </span>
           </>
         )}
@@ -302,10 +343,112 @@ export default function App() {
             {ariaStatus === 'listening' && '🎤 Your turn — speak now'}
           </span>
         )}
+        <button
+          className="model-config-btn"
+          onClick={() => setShowModelConfig(!showModelConfig)}
+          title="Model Configuration"
+        >
+          &#9881;
+        </button>
         <span className={`connection-status ${isConnected ? 'connected' : 'disconnected'}`}>
           {isConnected ? 'Connected' : 'Disconnected'}
         </span>
       </header>
+
+      {showModelConfig && (
+        <div className="model-config-overlay" onClick={() => setShowModelConfig(false)}>
+          <div className="model-config-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="config-header">
+              <h2>Model Configuration</h2>
+              <button className="config-close-btn" onClick={() => setShowModelConfig(false)}>&#10005;</button>
+            </div>
+
+            <div className="config-section">
+              <label className="config-label">{MODEL_CONFIG.voice.label}</label>
+              <p className="config-desc">{MODEL_CONFIG.voice.description}</p>
+              <div className="config-fixed">{MODEL_CONFIG.voice.fixedId}</div>
+            </div>
+
+            <div className="config-section">
+              <label className="config-label">{MODEL_CONFIG.brain.label}</label>
+              <p className="config-desc">{MODEL_CONFIG.brain.description}</p>
+              <select
+                className="config-select"
+                value={brainModel}
+                onChange={(e) => setBrainModel(e.target.value)}
+                disabled={!!sessionId}
+              >
+                {MODEL_CONFIG.brain.presets.map((p) => (
+                  <option key={p.value} value={p.value}>{p.label} ({p.id})</option>
+                ))}
+                <option value="custom">Custom</option>
+              </select>
+              {brainModel === 'custom' && (
+                <input
+                  type="text"
+                  className="config-input"
+                  placeholder="e.g. gemini-2.5-pro-preview-05-06"
+                  value={customBrainModel}
+                  onChange={(e) => setCustomBrainModel(e.target.value)}
+                  disabled={!!sessionId}
+                />
+              )}
+            </div>
+
+            <div className="config-section">
+              <label className="config-label">{MODEL_CONFIG.desktopVision.label}</label>
+              <p className="config-desc">{MODEL_CONFIG.desktopVision.description}</p>
+              <select
+                className="config-select"
+                value={desktopVisionModel}
+                onChange={(e) => setDesktopVisionModel(e.target.value)}
+                disabled={!!sessionId}
+              >
+                {MODEL_CONFIG.desktopVision.presets.map((p) => (
+                  <option key={p.value} value={p.value}>{p.label} ({p.value})</option>
+                ))}
+                <option value="custom">Custom</option>
+              </select>
+              {desktopVisionModel === 'custom' && (
+                <input
+                  type="text"
+                  className="config-input"
+                  placeholder="e.g. gemini-3-flash-preview"
+                  value={customDesktopVisionModel}
+                  onChange={(e) => setCustomDesktopVisionModel(e.target.value)}
+                  disabled={!!sessionId}
+                />
+              )}
+            </div>
+
+            <div className="config-section">
+              <label className="config-label">{MODEL_CONFIG.browserVision.label}</label>
+              <p className="config-desc">{MODEL_CONFIG.browserVision.description}</p>
+              <select
+                className="config-select"
+                value={browserVisionModel}
+                onChange={(e) => setBrowserVisionModel(e.target.value)}
+                disabled={!!sessionId}
+              >
+                {MODEL_CONFIG.browserVision.presets.map((p) => (
+                  <option key={p.value} value={p.value}>{p.label} ({p.value})</option>
+                ))}
+                <option value="custom">Custom</option>
+              </select>
+              {browserVisionModel === 'custom' && (
+                <input
+                  type="text"
+                  className="config-input"
+                  placeholder="e.g. gemini-3-flash-preview"
+                  value={customBrowserVisionModel}
+                  onChange={(e) => setCustomBrowserVisionModel(e.target.value)}
+                  disabled={!!sessionId}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="vta-main">
         {/* Left Panel */}
@@ -428,24 +571,6 @@ export default function App() {
                     <div className="mode-option-content">
                       <span className="mode-option-label">{mode.label}</span>
                       <span className="mode-option-desc">{mode.description}</span>
-                    </div>
-                  </label>
-                ))}
-              </div>
-              <div className="mode-selector">
-                <label className="mode-selector-label">Brain Model:</label>
-                {BRAIN_MODELS.map((model) => (
-                  <label key={model.value} className="mode-option">
-                    <input
-                      type="radio"
-                      name="brainModel"
-                      value={model.value}
-                      checked={brainModel === model.value}
-                      onChange={(e) => setBrainModel(e.target.value)}
-                    />
-                    <div className="mode-option-content">
-                      <span className="mode-option-label">{model.label}</span>
-                      <span className="mode-option-desc">{model.description}</span>
                     </div>
                   </label>
                 ))}

@@ -64,9 +64,9 @@ class VisionLoop:
     Follows Google's reference implementation pattern exactly.
     """
 
-    def __init__(self):
+    def __init__(self, model_id: str = None):
         self._client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-        self._model = os.environ.get("GEMINI_COMPUTER_USE_MODEL", COMPUTER_USE_MODEL)
+        self._model = model_id or os.environ.get("GEMINI_COMPUTER_USE_MODEL", COMPUTER_USE_MODEL)
         self._playwright = None
         self._browser = None
         self._persistent_page = None  # Reused across subtasks
