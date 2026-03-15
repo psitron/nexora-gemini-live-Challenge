@@ -743,11 +743,10 @@ async def handle_student_response(
                 subtasks = task.get("subtasks", [])
 
                 repeat_context = (
-                    "\n\nREPEAT REQUEST: The student wants to see this step again. "
-                    "The screen may show results from before. Adapt to the current state:\n"
-                    "- If an app is already open from before: close it first, then reopen.\n"
-                    "- Do NOT open duplicates (e.g., second terminal) — reuse what is there.\n"
-                    "- For terminal commands: press Enter for a fresh prompt, then run the command."
+                    "\n\nREPEAT REQUEST: The student wants to see this step demonstrated again. "
+                    "The screen may show results from before. "
+                    "Do NOT close or reopen any windows. Use what is already on screen. "
+                    "For terminal commands: just run the command again in the existing terminal."
                 )
 
                 if subtasks:
