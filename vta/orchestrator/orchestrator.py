@@ -9,6 +9,8 @@ Only reconnect when the student asks a question or wants a repeat.
 
 import asyncio
 import logging
+import os
+import subprocess
 from typing import Callable, Optional
 
 from vta.orchestrator.gemini_live_client import GeminiLiveClient as SonicClient
@@ -66,6 +68,31 @@ def _get_desktop_vision_loop() -> DesktopVisionLoop:
     if _desktop_vision_loop is None:
         _desktop_vision_loop = DesktopVisionLoop()
     return _desktop_vision_loop
+
+
+async def _reset_desktop_session():
+    """
+    Reset the XFCE desktop session by killing it and starting a fresh one.
+    Runs via subprocess (not Agent S3) since the orchestrator is on the same machine.
+    This closes all user windows (terminals, editors, browsers) and gives a clean desktop.
+    Xvfb, VNC, and all VTA services remain untouched.
+    """
+    env = {**os.environ, "DISPLAY": ":1"}
+    try:
+        # Kill the XFCE session — this closes all windows under it
+        logger.info("Resetting desktop: killing xfce4-session...")
+        subprocess.run(["pkill", "-f", "xfce4-session"], env=env, timeout=5,
+                        capture_output=True)
+        await asyncio.sleep(2)  # Give it a moment to fully shut down
+
+        # Start a fresh XFCE session
+        logger.info("Resetting desktop: starting fresh xfce4-session...")
+        subprocess.Popen(["startxfce4"], env=env,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        await asyncio.sleep(3)  # Wait for desktop to be ready
+        logger.info("Desktop reset complete — clean session running")
+    except Exception as e:
+        logger.warning(f"Desktop reset failed (non-fatal): {e}")
 
 
 async def run_tutorial(
@@ -175,13 +202,6 @@ async def run_tutorial(
     await sonic.send_text_kickstart("Please begin.")
     await sonic.wait_for_speech_done(timeout=30)
 
-    # Reset the Linux desktop (close terminals, browsers, etc.)
-    try:
-        await agent.reset_desktop()
-        logger.info("Desktop reset completed after tutorial")
-    except Exception as e:
-        logger.warning(f"Desktop reset failed (non-fatal): {e}")
-
     # Close Playwright browser if it was used during the session
     global _vision_loop
     if _vision_loop is not None:
@@ -190,6 +210,11 @@ async def run_tutorial(
         except Exception as e:
             logger.warning(f"Vision loop cleanup failed (non-fatal): {e}")
         _vision_loop = None
+
+    # Reset the Linux desktop by restarting the XFCE session directly via subprocess.
+    # This kills all windows (terminals, editors, browsers) and gives a clean desktop.
+    # No Agent S3 involved — orchestrator runs on the same machine.
+    await _reset_desktop_session()
 
     await state.end_session(session_id)
     await ws_send({"event": "session_complete", "tutorial_id": tutorial_id})
