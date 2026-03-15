@@ -109,13 +109,14 @@ async def serve_pdf(pdf_path: str):
 
 @app.post("/api/upload-tutorial")
 async def upload_tutorial(
-    pdf: UploadFile = File(...),
+    pdf: UploadFile = File(None),
     curriculum: UploadFile = File(None),
     title: str = Form("Uploaded Tutorial"),
 ):
-    """Upload a PDF and optional curriculum JSON to create a tutorial.
+    """Upload a curriculum JSON and optional PDF to create a tutorial.
 
-    If no curriculum JSON is provided, creates a basic one with one slide per page.
+    If no curriculum JSON is provided, auto-generates theory tasks from PDF pages.
+    If no PDF is provided, creates a hands-on only curriculum.
     Files are stored locally on the server.
     """
     import shutil
@@ -129,12 +130,15 @@ async def upload_tutorial(
     # Generate unique tutorial ID
     tutorial_id = f"tutorial_{uuid.uuid4().hex[:8]}"
 
-    # Save PDF
-    pdf_filename = f"{tutorial_id}.pdf"
-    pdf_path = os.path.join(pdfs_dir, pdf_filename)
-    with open(pdf_path, "wb") as f:
-        shutil.copyfileobj(pdf.file, f)
-    logger.info(f"Saved PDF: {pdf_path}")
+    # Save PDF (if provided)
+    pdf_filename = ""
+    pdf_path = ""
+    if pdf and pdf.filename:
+        pdf_filename = f"{tutorial_id}.pdf"
+        pdf_path = os.path.join(pdfs_dir, pdf_filename)
+        with open(pdf_path, "wb") as f:
+            shutil.copyfileobj(pdf.file, f)
+        logger.info(f"Saved PDF: {pdf_path}")
 
     # Save or generate curriculum
     if curriculum and curriculum.filename:
@@ -143,7 +147,7 @@ async def upload_tutorial(
         curriculum_data["tutorial_id"] = tutorial_id
         curriculum_data["pdf_s3_key"] = pdf_filename
         curriculum_data["pdf_url"] = ""
-    else:
+    elif pdf_path:
         # Count PDF pages and auto-generate one theory task per slide
         try:
             import fitz
@@ -174,6 +178,9 @@ async def upload_tutorial(
             "tasks": tasks_list,
         }
         logger.info(f"Auto-generated {page_count} theory tasks for '{title}'")
+    else:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Please provide a curriculum JSON or a PDF file.")
 
     curriculum_path = os.path.join(curriculum_dir, f"{tutorial_id}.json")
     with open(curriculum_path, "w") as f:

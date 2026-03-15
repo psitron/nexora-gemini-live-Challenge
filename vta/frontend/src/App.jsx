@@ -245,13 +245,14 @@ export default function App() {
 
   // Upload tutorial
   const handleUpload = useCallback(async () => {
-    if (!uploadedFile) return;
+    if (!uploadedFile && !uploadedCurriculum) return;
     setUploading(true);
 
     const formData = new FormData();
-    formData.append('pdf', uploadedFile);
+    if (uploadedFile) formData.append('pdf', uploadedFile);
     if (uploadedCurriculum) formData.append('curriculum', uploadedCurriculum);
-    formData.append('title', uploadTitle || uploadedFile.name.replace('.pdf', ''));
+    const defaultTitle = uploadedFile ? uploadedFile.name.replace('.pdf', '') : (uploadedCurriculum ? uploadedCurriculum.name.replace('.json', '') : 'Untitled');
+    formData.append('title', uploadTitle || defaultTitle);
 
     try {
       const resp = await fetch('/api/upload-tutorial', { method: 'POST', body: formData });
@@ -604,20 +605,20 @@ export default function App() {
 
               {showUploadForm === 'curriculum' && (
                 <div className="upload-section">
-                  <div className="upload-hint">Upload a PDF and a curriculum JSON file that defines tasks, subtasks, and narration.</div>
-                  <div className="upload-row">
-                    <label className="upload-label">
-                      Slides (PDF):
-                      <input type="file" accept=".pdf" onChange={(e) => setUploadedFile(e.target.files[0])} />
-                    </label>
-                  </div>
+                  <div className="upload-hint">Upload a curriculum JSON file that defines tasks, subtasks, and narration. PDF is optional — only needed if your curriculum has theory slides.</div>
                   <div className="upload-row">
                     <label className="upload-label">
                       Curriculum (JSON):
                       <input type="file" accept=".json" onChange={(e) => setUploadedCurriculum(e.target.files[0])} />
                     </label>
                   </div>
-                  {uploadedFile && uploadedCurriculum && (
+                  <div className="upload-row">
+                    <label className="upload-label">
+                      Slides (PDF, optional):
+                      <input type="file" accept=".pdf" onChange={(e) => setUploadedFile(e.target.files[0])} />
+                    </label>
+                  </div>
+                  {uploadedCurriculum && (
                     <button className="upload-btn" onClick={handleUpload} disabled={uploading}>
                       {uploading ? 'Importing...' : 'Import Course'}
                     </button>
