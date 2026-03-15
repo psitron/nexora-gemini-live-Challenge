@@ -49,11 +49,12 @@ RULES:
 1. LOOK at the screenshot. If a terminal is already open, do NOT open another.
 2. For click_position: provide pixel coordinates in the {w}x{h} image.
 3. Do EXACTLY what the goal says — no more, no less.
-4. As soon as the goal is achieved, return "done".
+4. As soon as the goal is achieved, return "done" IMMEDIATELY.
 5. NEVER install software.
 6. If the goal says to type something, use "run_command" or "type_text" — do NOT click first.
-7. If the same action appears in PREVIOUS ACTIONS, try a DIFFERENT approach.
+7. If "run_command" appears in PREVIOUS ACTIONS for the same command, the command has ALREADY been executed. Return "done" — do NOT run it again.
 8. The terminal is already focused — go straight to typing commands.
+9. NEVER execute the same command more than once. One run_command or one type_text+enter is enough.
 
 Return ONE JSON object only. No markdown, no explanation.
 Format: {{"action_type":"...","target":"...","description":"..."}}"""
