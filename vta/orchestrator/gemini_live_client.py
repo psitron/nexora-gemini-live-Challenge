@@ -367,9 +367,7 @@ class GeminiLiveClient:
     async def _settle_transcript(self):
         await asyncio.sleep(2.0)
         if self._transcript_buffer:
-            full_text = " ".join(t for _, t in self._transcript_buffer)
-            if self.transcript_callback:
-                await self.transcript_callback(full_text, "USER")
+            # Transcript already streamed word-by-word in _response_processor_loop
             self._transcript_event.set()
 
     # ── Speech detection ────────────────────────────────────────────────
@@ -471,11 +469,8 @@ class GeminiLiveClient:
                                 b64 = base64.b64encode(bytes(self._audio_out_buffer)).decode()
                                 self._audio_out_buffer.clear()
                                 await self.audio_output_callback(b64)
-                            if self._output_transcript_buffer and self.transcript_callback:
-                                await self.transcript_callback(
-                                    " ".join(self._output_transcript_buffer), "ASSISTANT"
-                                )
-                                self._output_transcript_buffer.clear()
+                            # Transcript already streamed word-by-word above
+                            self._output_transcript_buffer.clear()
                         else:
                             # Discard unsolicited output
                             self._audio_out_buffer.clear()
@@ -490,12 +485,18 @@ class GeminiLiveClient:
                             self._transcript_settle_task = asyncio.create_task(
                                 self._settle_transcript()
                             )
+                            # Stream student speech to chat in real-time
+                            if self.transcript_callback:
+                                await self.transcript_callback(user_text, "USER")
                             logger.info(f"[STUDENT] {user_text}")
 
                     if sc.output_transcription and sc.output_transcription.text:
                         model_text = sc.output_transcription.text.strip()
-                        if model_text:
+                        if model_text and self._output_enabled:
                             self._output_transcript_buffer.append(model_text)
+                            # Stream Nexora speech to chat in real-time
+                            if self.transcript_callback:
+                                await self.transcript_callback(model_text, "ASSISTANT")
                             logger.info(f"[Nexora] {model_text}")
 
             logger.info("Session ended (server closed)")
