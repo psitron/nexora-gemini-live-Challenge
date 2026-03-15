@@ -178,7 +178,7 @@ async def run_tutorial(
     await sonic.reconnect(prompt_override=welcome_prompt)
     await sonic.send_text_kickstart("Please begin.")
     await sonic.wait_for_speech_done(timeout=60)
-    await sonic.wait_for_playback_done(timeout=15)
+    await sonic.wait_for_playback_done(timeout=2)
     await ws_send({"event": "aria_listening"})
     # Wait for "ready" on the SAME welcome stream — no reconnect
     welcome_transcript = await sonic.wait_for_student_speech(timeout=120)
@@ -365,7 +365,7 @@ async def execute_theory_task(
     await sonic.reconnect(prompt_override=prompt)
     await sonic.send_text_kickstart("Please begin.")
     await sonic.wait_for_speech_done(timeout=90)
-    await sonic.wait_for_playback_done(timeout=15)
+    await sonic.wait_for_playback_done(timeout=2)
     logger.info(f"Theory task {task['task_id']} narration complete — listening")
     await ws_send({"event": "aria_listening"})
 
@@ -423,7 +423,7 @@ async def execute_practical_task(
         await sonic.reconnect(prompt_override=step_narration_prompt)
         await sonic.send_text_kickstart("Please begin.")
         await sonic.wait_for_speech_done(timeout=30)
-        await sonic.wait_for_playback_done(timeout=10)
+        await sonic.wait_for_playback_done(timeout=2)
 
         # Execute the action after narration
         if action:
@@ -457,7 +457,7 @@ async def execute_practical_task(
     await sonic.reconnect(prompt_override=summary_prompt)
     await sonic.send_text_kickstart("Please begin.")
     await sonic.wait_for_speech_done(timeout=30)
-    await sonic.wait_for_playback_done(timeout=15)
+    await sonic.wait_for_playback_done(timeout=2)
     await ws_send({"event": "aria_listening"})
 
     # Listen on the SAME stream — no extra reconnect
@@ -590,7 +590,7 @@ async def execute_vision_task(
     await sonic.reconnect(prompt_override=intro_prompt)
     await sonic.send_text_kickstart("Please begin.")
     await sonic.wait_for_speech_done(timeout=30)
-    await sonic.wait_for_playback_done(timeout=10)
+    await sonic.wait_for_playback_done(timeout=2)
 
     vision_loop = _get_vision_loop(model_id=model_id)
 
@@ -613,7 +613,7 @@ async def execute_vision_task(
             await sonic.reconnect(prompt_override=narration_prompt)
             await sonic.send_text_kickstart("Please begin.")
             await sonic.wait_for_speech_done(timeout=30)
-            await sonic.wait_for_playback_done(timeout=10)
+            await sonic.wait_for_playback_done(timeout=2)
 
             logger.info(f"Vision loop for subtask {subtask_id}: {subtask_goal}")
             result = await vision_loop.run(goal=subtask_goal, agent=agent, ws_send=ws_send)
@@ -654,7 +654,7 @@ async def execute_vision_task(
         await sonic.reconnect(prompt_override=closing_prompt)
         await sonic.send_text_kickstart("Please begin.")
         await sonic.wait_for_speech_done(timeout=30)
-        await sonic.wait_for_playback_done(timeout=15)
+        await sonic.wait_for_playback_done(timeout=2)
     await ws_send({"event": "aria_listening"})
 
     transcript = await sonic.wait_for_student_speech(timeout=120)
