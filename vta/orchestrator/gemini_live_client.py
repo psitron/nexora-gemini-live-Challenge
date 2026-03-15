@@ -89,6 +89,14 @@ class GeminiLiveClient:
                         ),
                     ),
                 ),
+                realtime_input_config=types.RealtimeInputConfig(
+                    automatic_activity_detection=types.AutomaticActivityDetection(
+                        disabled=False,
+                        start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
+                        end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
+                        silence_duration_ms=500,
+                    ),
+                ),
                 system_instruction=types.Content(
                     parts=[types.Part(text=system_prompt)],
                 ),
@@ -170,6 +178,14 @@ class GeminiLiveClient:
                         prebuilt_voice_config=types.PrebuiltVoiceConfig(
                             voice_name="Kore",
                         ),
+                    ),
+                ),
+                realtime_input_config=types.RealtimeInputConfig(
+                    automatic_activity_detection=types.AutomaticActivityDetection(
+                        disabled=False,
+                        start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
+                        end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
+                        silence_duration_ms=500,
                     ),
                 ),
                 system_instruction=types.Content(
@@ -345,7 +361,7 @@ class GeminiLiveClient:
         return text
 
     async def _settle_transcript(self):
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(2.0)
         if self._transcript_buffer:
             full_text = " ".join(t for _, t in self._transcript_buffer)
             if self.transcript_callback:
