@@ -307,15 +307,54 @@ class GeminiLiveClient:
 
     # ── Transcript ──────────────────────────────────────────────────────
 
-    async def wait_for_student_speech(self, timeout: float = 120) -> str:
-        """Wait for student speech. Reconnects if session died."""
-        if not self.is_active or not self._session:
-            logger.info("Session dead — reconnecting for listening")
+    async def _use_precreated_session(self) -> bool:
+        """Swap in the pre-created listening session if available."""
+        if not self._precreated_session:
+            return False
+        try:
+            session, ctx = self._precreated_session
+            self._precreated_session = None
+
+            # Tear down current dead session
             await self._teardown()
-            if not await self._create_session(
-                self._system_prompt or ARIA_SYSTEM_PROMPT
-            ):
-                return ""
+
+            # Install the pre-created session
+            self._session = session
+            self._session_ctx = ctx
+            self.is_active = True
+            self._mic_enabled = False
+            self._output_enabled = False
+            self._transcript_buffer.clear()
+            self._transcript_event.clear()
+            self._speech_done.clear()
+            self._last_audio_output_time = 0.0
+            self._output_transcript_buffer.clear()
+            self._audio_out_buffer.clear()
+
+            # Start background tasks for this session
+            self._background_tasks = [
+                asyncio.create_task(self._audio_sender_loop()),
+                asyncio.create_task(self._response_processor_loop()),
+                asyncio.create_task(self._monitor_speech_completion()),
+            ]
+            logger.info("Switched to pre-created listening session")
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to use pre-created session: {e}")
+            self._precreated_session = None
+            return False
+
+    async def wait_for_student_speech(self, timeout: float = 120) -> str:
+        """Wait for student speech. Uses pre-created session or reconnects if session died."""
+        if not self.is_active or not self._session:
+            # Try pre-created session first (faster, already warmed up)
+            if not await self._use_precreated_session():
+                logger.info("Session dead — reconnecting for listening")
+                await self._teardown()
+                if not await self._create_session(
+                    self._system_prompt or ARIA_SYSTEM_PROMPT
+                ):
+                    return ""
             await asyncio.sleep(0.3)
 
         self._transcript_buffer.clear()
@@ -329,15 +368,19 @@ class GeminiLiveClient:
                 if not self.is_active or not self._session:
                     logger.info("Session died during wait — reconnecting")
                     self.disable_mic()
-                    await self._teardown()
-                    if not await self._create_session(
-                        self._system_prompt or ARIA_SYSTEM_PROMPT
-                    ):
-                        return ""
-                    self._output_enabled = False  # Re-suppress output after reconnect
+                    # Try pre-created session first
+                    if not await self._use_precreated_session():
+                        await self._teardown()
+                        if not await self._create_session(
+                            self._system_prompt or ARIA_SYSTEM_PROMPT
+                        ):
+                            return ""
+                        self._output_enabled = False
                     self._transcript_buffer.clear()
                     self._transcript_event.clear()
                     self.enable_mic()
+                    # Pre-create next session in background for faster recovery
+                    asyncio.create_task(self._precreate_listening_session())
 
                 try:
                     wait_time = 2.0
@@ -365,7 +408,7 @@ class GeminiLiveClient:
         return text
 
     async def _settle_transcript(self):
-        await asyncio.sleep(2.0)
+        await asyncio.sleep(3.0)
         if self._transcript_buffer:
             # Transcript already streamed word-by-word in _response_processor_loop
             self._transcript_event.set()
