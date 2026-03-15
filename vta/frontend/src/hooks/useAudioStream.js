@@ -3,23 +3,30 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 /**
  * Audio streaming hook for microphone capture and playback.
  *
- * Captures mic audio at 16kHz mono PCM, sends as base64 via WebSocket.
- * Plays received 24kHz audio chunks from Gemini.
+ * Mic stream is created ONCE and kept alive for the entire session.
+ * startMic/stopMic just toggle whether audio is sent to the backend.
+ * This avoids the 500ms-1s delay of recreating getUserMedia on every turn.
  */
 export default function useAudioStream(wsSend) {
   const [isMicActive, setIsMicActive] = useState(false);
   const mediaStreamRef = useRef(null);
   const audioContextRef = useRef(null);
-  const workletNodeRef = useRef(null);
+  const processorRef = useRef(null);
+  const sendingRef = useRef(false); // Gate: whether to send audio to backend
   const playbackContextRef = useRef(null);
   const playbackQueueRef = useRef([]);
   const isPlayingRef = useRef(false);
+  const initializedRef = useRef(false);
 
-  // --- Microphone capture ---
+  // --- Initialize mic once (called on first startMic) ---
 
-  const startMic = useCallback(async () => {
+  const ensureMicInitialized = useCallback(async () => {
+    if (initializedRef.current && audioContextRef.current && mediaStreamRef.current) {
+      return true; // Already initialized
+    }
+
     try {
-      console.log('[AUDIO] Starting microphone');
+      console.log('[AUDIO] Initializing microphone (one-time)');
 
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -33,7 +40,6 @@ export default function useAudioStream(wsSend) {
 
       mediaStreamRef.current = stream;
 
-      // Create AudioContext at 16kHz to avoid resampling
       const audioContext = new (window.AudioContext || window.webkitAudioContext)({
         sampleRate: 16000,
         latencyHint: 'interactive',
@@ -41,24 +47,19 @@ export default function useAudioStream(wsSend) {
       audioContextRef.current = audioContext;
 
       const source = audioContext.createMediaStreamSource(stream);
-
-      // Use ScriptProcessorNode with larger buffer (4096) for stability
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
       processor.onaudioprocess = (event) => {
-        const float32Data = event.inputBuffer.getChannelData(0);
+        if (!sendingRef.current) return; // Gate closed — don't send
 
-        // Convert Float32 to Int16 PCM
+        const float32Data = event.inputBuffer.getChannelData(0);
         const int16Array = new Int16Array(float32Data.length);
         for (let i = 0; i < float32Data.length; i++) {
           const s = Math.max(-1, Math.min(1, float32Data[i]));
           int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
         }
 
-        // Convert to base64
         const base64 = arrayBufferToBase64(int16Array.buffer);
-
-        // Send to orchestrator
         wsSend({
           event: 'student_audio',
           data: base64,
@@ -67,31 +68,40 @@ export default function useAudioStream(wsSend) {
 
       source.connect(processor);
       processor.connect(audioContext.destination);
+      processorRef.current = processor;
+      initializedRef.current = true;
 
-      workletNodeRef.current = processor;
-      setIsMicActive(true);
+      console.log('[AUDIO] Microphone initialized and ready');
+      return true;
     } catch (err) {
       console.error('Microphone access denied:', err);
+      return false;
     }
   }, [wsSend]);
 
-  const stopMic = useCallback(async () => {
-    if (workletNodeRef.current) {
-      workletNodeRef.current.disconnect();
-      workletNodeRef.current = null;
+  // --- Start/stop just toggle the sending gate ---
+
+  const startMic = useCallback(async () => {
+    await ensureMicInitialized();
+
+    // Resume AudioContext if suspended (browser autoplay policy)
+    if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+      try {
+        await audioContextRef.current.resume();
+      } catch (e) {
+        console.warn('Failed to resume audio context:', e);
+      }
     }
 
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
+    sendingRef.current = true;
+    setIsMicActive(true);
+    console.log('[AUDIO] Mic sending ON');
+  }, [ensureMicInitialized]);
 
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
-      mediaStreamRef.current = null;
-    }
-
+  const stopMic = useCallback(() => {
+    sendingRef.current = false;
     setIsMicActive(false);
+    console.log('[AUDIO] Mic sending OFF');
   }, []);
 
   // --- Audio playback ---
@@ -163,15 +173,28 @@ export default function useAudioStream(wsSend) {
     }
   }, [wsSend]);
 
-  // Cleanup on unmount
+  // Cleanup on unmount only
   useEffect(() => {
     return () => {
-      stopMic();
+      sendingRef.current = false;
+      if (processorRef.current) {
+        processorRef.current.disconnect();
+        processorRef.current = null;
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+      }
       if (playbackContextRef.current) {
         playbackContextRef.current.close();
       }
+      initializedRef.current = false;
     };
-  }, [stopMic]);
+  }, []);
 
   return {
     isMicActive,
