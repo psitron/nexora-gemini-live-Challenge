@@ -346,7 +346,7 @@ export default function App() {
         <button
           className="model-config-btn"
           onClick={() => setShowModelConfig(!showModelConfig)}
-          title="Model Configuration"
+          title="Configuration"
         >
           &#9881;
         </button>
@@ -359,8 +359,23 @@ export default function App() {
         <div className="model-config-overlay" onClick={() => setShowModelConfig(false)}>
           <div className="model-config-panel" onClick={(e) => e.stopPropagation()}>
             <div className="config-header">
-              <h2>Model Configuration</h2>
+              <h2>Configuration</h2>
               <button className="config-close-btn" onClick={() => setShowModelConfig(false)}>&#10005;</button>
+            </div>
+
+            <div className="config-section">
+              <label className="config-label">Gemini API Key</label>
+              <p className="config-desc">Required for all AI features — voice, vision, and brain models.</p>
+              <input
+                type="password"
+                className="config-input"
+                placeholder="Enter your Gemini API key"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+              />
+              <span className="api-key-hint" style={{ marginTop: '6px' }}>
+                Get your key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>
+              </span>
             </div>
 
             <div className="config-section">
@@ -610,19 +625,6 @@ export default function App() {
                     </div>
                   </label>
                 ))}
-              </div>
-              <div className="api-key-section">
-                <label className="mode-selector-label">Gemini API Key:</label>
-                <input
-                  type="password"
-                  placeholder="Enter your Gemini API key"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  className="upload-input"
-                />
-                <span className="api-key-hint">
-                  Get your key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>
-                </span>
               </div>
               <button
                 className="start-btn"
