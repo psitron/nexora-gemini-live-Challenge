@@ -515,6 +515,10 @@ async def execute_desktop_vision_task(
             result = await desktop_loop.run(goal=subtask_goal, agent=agent, ws_send=ws_send)
             logger.info(f"Subtask {subtask_id}: success={result.success} — {result.message}")
             # Narrate what just happened in a friendly, natural way
+            # Include closing question in the LAST subtask narration to avoid extra reconnect
+            is_last_subtask = (subtask == subtasks[-1]) if subtasks else True
+            closing_addition = " Any questions, or say ready to continue." if (is_last_subtask and not is_last) else ""
+
             if result.success:
                 step_done_prompt = (
                     f"You are Nexora, a friendly tutor. The step '{subtask_title}' just completed. "
@@ -522,11 +526,13 @@ async def execute_desktop_vision_task(
                     f"Summarize this in ONE short, friendly sentence for a beginner. "
                     f"Do not use technical jargon like XFCE, xdg-open, or process names. "
                     f"Speak naturally as if explaining to a student what they can now see on screen."
+                    f"{' Then say: ' + closing_addition if closing_addition else ''}"
                 )
             else:
                 step_done_prompt = (
                     f"You are Nexora, a friendly tutor. The step '{subtask_title}' had an issue: {result.message}\n\n"
                     f"Explain this in ONE short, friendly sentence. Be encouraging."
+                    f"{' Then say: ' + closing_addition if closing_addition else ''}"
                 )
             await sonic.reconnect(prompt_override=step_done_prompt)
             await sonic.send_text_kickstart("Please begin.")
@@ -538,17 +544,6 @@ async def execute_desktop_vision_task(
         logger.info(f"Desktop vision: {goal}")
         result = await desktop_loop.run(goal=goal, agent=agent, ws_send=ws_send)
 
-    # Closing — no generic summary, just ask if ready to continue
-    closing = "Any questions, or say ready to continue." if not is_last else ""
-    if closing:
-        closing_prompt = (
-            f"Speak ONLY these exact words, nothing more. Do not elaborate, ask questions, or add anything:\n\n"
-            f"{closing}"
-        )
-        await ws_send({"event": "aria_thinking"})
-        await sonic.reconnect(prompt_override=closing_prompt)
-        await sonic.send_text_kickstart("Please begin.")
-        await sonic.wait_for_speech_done(timeout=30)
     await ws_send({"event": "aria_listening"})
 
     transcript = await sonic.wait_for_student_speech(timeout=120)
@@ -618,7 +613,10 @@ async def execute_vision_task(
             logger.info(f"Vision loop for subtask {subtask_id}: {subtask_goal}")
             result = await vision_loop.run(goal=subtask_goal, agent=agent, ws_send=ws_send)
             logger.info(f"Subtask {subtask_id} result: success={result.success} — {result.message}")
-            # Narrate what just happened in a friendly, natural way
+            # Narrate what just happened — include closing in last subtask
+            is_last_subtask = (subtask == subtasks[-1]) if subtasks else True
+            closing_addition = " Any questions, or say ready to continue." if (is_last_subtask and not is_last) else ""
+
             if result.success:
                 step_done_prompt = (
                     f"You are Nexora, a friendly tutor. The step '{subtask_title}' just completed. "
@@ -626,11 +624,13 @@ async def execute_vision_task(
                     f"Summarize this in ONE short, friendly sentence for a beginner. "
                     f"Do not use technical jargon like XFCE, xdg-open, or process names. "
                     f"Speak naturally as if explaining to a student what they can now see on screen."
+                    f"{' Then say: ' + closing_addition if closing_addition else ''}"
                 )
             else:
                 step_done_prompt = (
                     f"You are Nexora, a friendly tutor. The step '{subtask_title}' had an issue: {result.message}\n\n"
                     f"Explain this in ONE short, friendly sentence. Be encouraging."
+                    f"{' Then say: ' + closing_addition if closing_addition else ''}"
                 )
             await sonic.reconnect(prompt_override=step_done_prompt)
             await sonic.send_text_kickstart("Please begin.")
@@ -643,18 +643,6 @@ async def execute_vision_task(
         logger.info(f"Starting vision loop for goal: {goal}")
         result = await vision_loop.run(goal=goal, agent=agent, ws_send=ws_send)
 
-    # 3. Closing — no generic summary, just ask if ready to continue
-    closing = "Any questions, or say ready to continue." if not is_last else ""
-    if closing:
-        closing_prompt = (
-            f"Speak ONLY these exact words, nothing more. Do not elaborate, ask questions, or add anything:\n\n"
-            f"{closing}"
-        )
-        await ws_send({"event": "aria_thinking"})
-        await sonic.reconnect(prompt_override=closing_prompt)
-        await sonic.send_text_kickstart("Please begin.")
-        await sonic.wait_for_speech_done(timeout=30)
-        await sonic.wait_for_playback_done(timeout=2)
     await ws_send({"event": "aria_listening"})
 
     transcript = await sonic.wait_for_student_speech(timeout=120)

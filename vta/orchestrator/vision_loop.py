@@ -345,11 +345,16 @@ Current screenshot:"""),
                     logger.info(f"Saved screenshot: {ss_name}")
 
                     # Build FunctionResponse with screenshot INSIDE (exact Google pattern)
+                    # If the model requested safety confirmation, acknowledge it
+                    response_dict = {"url": current_url}
+                    if fc_args.get("safety_decision", {}).get("decision") == "require_confirmation":
+                        response_dict["safety_acknowledgement"] = True
+
                     function_response_parts.append(
                         types.Part(
                             function_response=GFunctionResponse(
                                 name=fc.name,
-                                response={"url": current_url},
+                                response=response_dict,
                                 parts=[
                                     types.Part(
                                         inline_data=FunctionResponseBlob(
