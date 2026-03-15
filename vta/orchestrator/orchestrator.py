@@ -175,6 +175,22 @@ async def run_tutorial(
     await sonic.send_text_kickstart("Please begin.")
     await sonic.wait_for_speech_done(timeout=30)
 
+    # Reset the Linux desktop (close terminals, browsers, etc.)
+    try:
+        await agent.reset_desktop()
+        logger.info("Desktop reset completed after tutorial")
+    except Exception as e:
+        logger.warning(f"Desktop reset failed (non-fatal): {e}")
+
+    # Close Playwright browser if it was used during the session
+    global _vision_loop
+    if _vision_loop is not None:
+        try:
+            await _vision_loop.close()
+        except Exception as e:
+            logger.warning(f"Vision loop cleanup failed (non-fatal): {e}")
+        _vision_loop = None
+
     await state.end_session(session_id)
     await ws_send({"event": "session_complete", "tutorial_id": tutorial_id})
     logger.info(f"Tutorial {tutorial_id} completed for session {session_id}")

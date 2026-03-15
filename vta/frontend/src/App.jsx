@@ -63,7 +63,7 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [currentTaskId, setCurrentTaskId] = useState(null);
-  const [rightPanel, setRightPanel] = useState('slides'); // 'slides' or 'desktop'
+  const [rightPanel, setRightPanel] = useState('welcome'); // 'welcome' | 'slides' | 'desktop'
   const [currentPage, setCurrentPage] = useState(1);
   const [currentTask, setCurrentTask] = useState(null);
   const [showConfirmation, setShowConfirmation] = useState(false);
@@ -188,6 +188,7 @@ export default function App() {
     on('session_complete', () => {
       setSessionComplete(true);
       setAriaStatus('idle');
+      setRightPanel('welcome');
     });
 
     on('error', (data) => {
@@ -484,6 +485,12 @@ export default function App() {
                   setMessages([]);
                   setTasks([]);
                   setAriaStatus('idle');
+                  setRightPanel('welcome');
+                  setTutorialTitle('');
+                  setPdfUrl('');
+                  setCurrentTask(null);
+                  setCurrentTaskId(null);
+                  setCurrentPage(1);
                 }}
               >
                 Back to Courses
@@ -494,6 +501,14 @@ export default function App() {
 
         {/* Right Panel */}
         <div className="right-panel">
+          {rightPanel === 'welcome' && (
+            <div className="welcome-panel">
+              <div className="welcome-icon">&#10022;</div>
+              <h2 className="welcome-title">Welcome to Nexora</h2>
+              <p className="welcome-subtitle">Select a course and press Start to begin your learning session.</p>
+            </div>
+          )}
+
           <div
             className="slide-panel"
             style={{ display: rightPanel === 'slides' ? 'flex' : 'none' }}

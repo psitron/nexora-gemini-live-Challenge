@@ -798,6 +798,37 @@ body {
   font-size: 15px;
 }
 
+/* Welcome Panel */
+.welcome-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 48px;
+}
+
+.welcome-icon {
+  font-size: 64px;
+  color: #818cf8;
+  margin-bottom: 24px;
+}
+
+.welcome-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin: 0 0 12px 0;
+}
+
+.welcome-subtitle {
+  font-size: 16px;
+  color: #64748b;
+  max-width: 400px;
+  line-height: 1.6;
+}
+
 /* noVNC Panel */
 .novnc-panel {
   flex: 1;

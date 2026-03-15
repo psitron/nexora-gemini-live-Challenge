@@ -110,6 +110,37 @@ class AgentS3Client:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    async def reset_desktop(self) -> dict:
+        """
+        Reset the Linux desktop to a clean state by killing user-spawned
+        applications (terminals, browsers, file managers, editors).
+        """
+        reset_script = (
+            "pkill -f xfce4-terminal 2>/dev/null; "
+            "pkill -f gnome-terminal 2>/dev/null; "
+            "pkill -f xterm 2>/dev/null; "
+            "pkill -f bash 2>/dev/null; "
+            "pkill -f chromium 2>/dev/null; "
+            "pkill -f chrome 2>/dev/null; "
+            "pkill -f firefox 2>/dev/null; "
+            "pkill -f nautilus 2>/dev/null; "
+            "pkill -f thunar 2>/dev/null; "
+            "pkill -f nemo 2>/dev/null; "
+            "pkill -f gedit 2>/dev/null; "
+            "pkill -f mousepad 2>/dev/null; "
+            "pkill -f code 2>/dev/null; "
+            "wmctrl -l 2>/dev/null | awk '{print $1}' | xargs -I{} wmctrl -ic {} 2>/dev/null; "
+            "true"
+        )
+        logger.info("Resetting Linux desktop — closing all user applications")
+        try:
+            result = await self.run(action="run_command", params={"cmd": reset_script})
+            logger.info(f"Desktop reset result: {result}")
+            return result
+        except Exception as e:
+            logger.warning(f"Desktop reset failed (non-fatal): {e}")
+            return {"result": {"success": False, "error": str(e)}}
+
     async def close(self):
         """Close the HTTP client."""
         if self._client and not self._client.is_closed:
