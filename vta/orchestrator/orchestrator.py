@@ -72,25 +72,59 @@ def _get_desktop_vision_loop() -> DesktopVisionLoop:
 
 async def _reset_desktop_session():
     """
-    Reset the XFCE desktop session by killing it and starting a fresh one.
-    Runs via subprocess (not Agent S3) since the orchestrator is on the same machine.
-    This closes all user windows (terminals, editors, browsers) and gives a clean desktop.
-    Xvfb, VNC, and all VTA services remain untouched.
+    Close all user windows on DISPLAY :1 using wmctrl, leaving the XFCE
+    desktop environment (session, panel, window manager) untouched.
+    Runs via subprocess — no Agent S3 involved.
     """
     env = {**os.environ, "DISPLAY": ":1"}
-    try:
-        # Kill the XFCE session — this closes all windows under it
-        logger.info("Resetting desktop: killing xfce4-session...")
-        subprocess.run(["pkill", "-f", "xfce4-session"], env=env, timeout=5,
-                        capture_output=True)
-        await asyncio.sleep(2)  # Give it a moment to fully shut down
 
-        # Start a fresh XFCE session
-        logger.info("Resetting desktop: starting fresh xfce4-session...")
-        subprocess.Popen(["startxfce4"], env=env,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        await asyncio.sleep(3)  # Wait for desktop to be ready
-        logger.info("Desktop reset complete — clean session running")
+    try:
+        # Phase 1: Gracefully close all user windows via wmctrl.
+        # Workspace -1 = sticky windows (desktop, panel) — skip those.
+        logger.info("Resetting desktop: closing all user windows...")
+        result = subprocess.run(
+            ["wmctrl", "-l", "-i"],
+            capture_output=True, text=True, env=env, timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            for line in result.stdout.strip().split("\n"):
+                parts = line.split()
+                if len(parts) >= 2 and parts[1] != "-1":
+                    wid = parts[0]
+                    subprocess.run(
+                        ["wmctrl", "-ic", wid],
+                        env=env, capture_output=True, timeout=3,
+                    )
+            logger.info("Phase 1: graceful close sent to all user windows")
+
+        await asyncio.sleep(2)
+
+        # Phase 2: Force-kill any windows that survived the graceful close.
+        result = subprocess.run(
+            ["wmctrl", "-l", "-i"],
+            capture_output=True, text=True, env=env, timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            remaining = [
+                line.split()[0]
+                for line in result.stdout.strip().split("\n")
+                if len(line.split()) >= 2 and line.split()[1] != "-1"
+            ]
+            for wid in remaining:
+                subprocess.run(
+                    ["xdotool", "windowkill", wid],
+                    env=env, capture_output=True, timeout=3,
+                )
+            if remaining:
+                logger.info(f"Phase 2: force-killed {len(remaining)} stubborn windows")
+
+        # Phase 3: Clear saved session so XFCE doesn't restore closed apps.
+        subprocess.run(
+            ["bash", "-c", "rm -rf ~/.cache/sessions/*"],
+            env=env, capture_output=True, timeout=3,
+        )
+
+        logger.info("Desktop reset complete — clean desktop ready")
     except Exception as e:
         logger.warning(f"Desktop reset failed (non-fatal): {e}")
 

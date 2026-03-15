@@ -65,6 +65,23 @@ npm run build 2>/dev/null || echo "Frontend build skipped (will use dev server)"
 cd "$REPO_ROOT"
 
 echo ""
+echo "Fixing polkit color management popup..."
+
+# Suppress the "Authentication needed for color management devices" dialog
+# that appears when XFCE starts on a virtual display.
+sudo mkdir -p /etc/polkit-1/localauthority/50-local.d
+sudo tee /etc/polkit-1/localauthority/50-local.d/45-allow-colord.pkla > /dev/null <<POLKIT
+[Allow Colord all Users]
+Identity=unix-user:*
+Action=org.freedesktop.color-manager.create-device;org.freedesktop.color-manager.create-profile;org.freedesktop.color-manager.delete-device;org.freedesktop.color-manager.delete-profile;org.freedesktop.color-manager.modify-device;org.freedesktop.color-manager.modify-profile
+ResultAny=no
+ResultInactive=no
+ResultActive=yes
+POLKIT
+
+sudo systemctl restart polkit 2>/dev/null || true
+
+echo ""
 echo "Setting up virtual display..."
 
 # Create systemd service for Xvfb
@@ -84,6 +101,14 @@ XVFB
 sudo systemctl daemon-reload
 sudo systemctl enable xvfb
 sudo systemctl start xvfb
+
+echo ""
+echo "Disabling XFCE session restore..."
+
+# Prevent XFCE from restoring previously open windows on session changes.
+# This must run after XFCE has started at least once to create the channel.
+DISPLAY=:1 xfconf-query -c xfce4-session -p /general/SaveOnExit -n -t bool -s false 2>/dev/null || true
+DISPLAY=:1 xfconf-query -c xfce4-session -p /general/AutoSave -n -t bool -s false 2>/dev/null || true
 
 echo ""
 echo "=== Setup Complete ==="
