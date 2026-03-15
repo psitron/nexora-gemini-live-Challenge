@@ -63,6 +63,7 @@ class GeminiLiveClient:
         self._last_audio_output_time = 0.0
         self._speech_done = asyncio.Event()
         self._transcript_ready_after = 0.0
+        self._output_enabled = True  # Gate for model audio output to frontend
 
         self._playback_done_event = asyncio.Event()
         self._playback_done_event.set()
@@ -108,6 +109,7 @@ class GeminiLiveClient:
             self._playback_done_event.clear()
             self._last_audio_output_time = 0.0
             self._mic_enabled = False
+            self._output_enabled = True
             self._output_transcript_buffer.clear()
             self._audio_out_buffer.clear()
             if self._transcript_settle_task and not self._transcript_settle_task.done():
@@ -299,6 +301,7 @@ class GeminiLiveClient:
 
         self._transcript_buffer.clear()
         self._transcript_event.clear()
+        self._output_enabled = False  # Suppress any auto-response while listening
         self.enable_mic()
 
         try:
@@ -430,6 +433,8 @@ class GeminiLiveClient:
                     if sc.model_turn and sc.model_turn.parts:
                         for part in sc.model_turn.parts:
                             if part.inline_data and part.inline_data.data:
+                                if not self._output_enabled:
+                                    continue  # Suppress unsolicited model audio
                                 self._last_audio_output_time = time.time()
                                 self._speech_done.clear()
                                 self._audio_out_buffer.extend(part.inline_data.data)
@@ -441,14 +446,19 @@ class GeminiLiveClient:
 
                     if sc.turn_complete:
                         logger.info("[TURN COMPLETE]")
-                        if self._audio_out_buffer and self.audio_output_callback:
-                            b64 = base64.b64encode(bytes(self._audio_out_buffer)).decode()
+                        if self._output_enabled:
+                            if self._audio_out_buffer and self.audio_output_callback:
+                                b64 = base64.b64encode(bytes(self._audio_out_buffer)).decode()
+                                self._audio_out_buffer.clear()
+                                await self.audio_output_callback(b64)
+                            if self._output_transcript_buffer and self.transcript_callback:
+                                await self.transcript_callback(
+                                    " ".join(self._output_transcript_buffer), "ASSISTANT"
+                                )
+                                self._output_transcript_buffer.clear()
+                        else:
+                            # Discard unsolicited output
                             self._audio_out_buffer.clear()
-                            await self.audio_output_callback(b64)
-                        if self._output_transcript_buffer and self.transcript_callback:
-                            await self.transcript_callback(
-                                " ".join(self._output_transcript_buffer), "ASSISTANT"
-                            )
                             self._output_transcript_buffer.clear()
 
                     if sc.input_transcription and sc.input_transcription.text:
