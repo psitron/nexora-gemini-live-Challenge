@@ -741,20 +741,29 @@ async def handle_student_response(
 
                 desktop_loop = _get_desktop_vision_loop(model_id=desktop_vision_model)
                 subtasks = task.get("subtasks", [])
+
+                repeat_context = (
+                    "\n\nIMPORTANT — REPEAT REQUEST: The student wants to see this step performed again. "
+                    "The screen may still show results from the previous execution. You MUST execute "
+                    "the goal from scratch. Adapt to the current screen state:\n"
+                    "- If a terminal shows old command output: press Enter to get a fresh prompt, "
+                    "then re-type and execute the command.\n"
+                    "- If an application (editor, browser, etc.) is already open from before: "
+                    "close it first (e.g., Ctrl+X for nano, Alt+F4 for windows), then reopen it.\n"
+                    "- If a duplicate would be created (e.g., second terminal): do NOT open another, "
+                    "use the existing one.\n"
+                    "- Do NOT report 'done' just because the result is already visible on screen. "
+                    "You must actually perform the action again."
+                )
+
                 if subtasks:
                     for subtask in subtasks:
                         subtask_title = subtask.get("title", "")
                         subtask_goal = subtask.get("goal", subtask_title)
-                        # Add hint that this is a repeat — AI should adapt to current screen state
-                        repeat_goal = (
-                            f"{subtask_goal}\n"
-                            f"NOTE: This is a repeat. The screen may already show the result from before. "
-                            f"Adapt to the current state — if the goal is already achieved, report done."
-                        )
+                        repeat_goal = f"{subtask_goal}{repeat_context}"
                         result = await desktop_loop.run(goal=repeat_goal, agent=agent, ws_send=ws_send)
                         logger.info(f"Repeat {subtask.get('subtask_id')}: {result.success} — {result.message}")
 
-                        # Narrate result naturally
                         if result.success:
                             narrate_prompt = (
                                 f"You are Nexora, a friendly tutor. The step '{subtask_title}' just completed. "
@@ -771,7 +780,8 @@ async def handle_student_response(
                         await sonic.wait_for_speech_done(timeout=30)
                 else:
                     goal = task.get("goal", task.get("title", ""))
-                    result = await desktop_loop.run(goal=goal, agent=agent, ws_send=ws_send)
+                    repeat_goal = f"{goal}{repeat_context}"
+                    result = await desktop_loop.run(goal=repeat_goal, agent=agent, ws_send=ws_send)
 
                 closing_prompt = (
                     f"Speak ONLY these exact words, nothing more:\n\n"
