@@ -701,6 +701,7 @@ export default function App() {
               currentPage={currentPage}
               currentTask={currentTask}
               onSlideLoaded={handleSlideLoaded}
+              visible={rightPanel === 'slides'}
             />
           </div>
 

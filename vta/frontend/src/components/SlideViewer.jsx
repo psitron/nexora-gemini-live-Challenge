@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
  * Slide viewer — shows PDF pages or text-based slides.
  * Falls back to text slides when no PDF is available.
  */
-export default function SlideViewer({ pdfUrl, currentPage, currentTask, onSlideLoaded }) {
+export default function SlideViewer({ pdfUrl, currentPage, currentTask, onSlideLoaded, visible }) {
   const canvasRef = useRef(null);
   const [pdfDoc, setPdfDoc] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -81,7 +81,7 @@ export default function SlideViewer({ pdfUrl, currentPage, currentTask, onSlideL
     })();
 
     return () => { cancelled = true; };
-  }, [pdfDoc, currentPage, onSlideLoaded]);
+  }, [pdfDoc, currentPage, onSlideLoaded, visible]);
 
   // If PDF loaded successfully, show it
   if (pdfDoc) {
