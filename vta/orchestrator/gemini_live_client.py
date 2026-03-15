@@ -210,11 +210,32 @@ class GeminiLiveClient:
                 config=config,
             )
             session = await ctx.__aenter__()
-            self._precreated_session = (session, ctx)
-            logger.info("Pre-created listening session ready")
+
+            # Start a keepalive task that sends silence to prevent server from
+            # closing the idle pre-created session before we use it.
+            keepalive_task = asyncio.create_task(
+                self._precreated_session_keepalive(session)
+            )
+            self._precreated_session = (session, ctx, keepalive_task)
+            logger.info("Pre-created listening session ready (with keepalive)")
         except Exception as e:
             logger.error(f"Failed to pre-create listening session: {e}")
             self._precreated_session = None
+
+    async def _precreated_session_keepalive(self, session):
+        """Send silence audio to a pre-created session to keep it alive."""
+        SILENCE = b'\x00' * 3200
+        try:
+            while True:
+                await asyncio.sleep(0.5)
+                try:
+                    await session.send_realtime_input(
+                        audio=types.Blob(data=SILENCE, mime_type="audio/pcm;rate=16000")
+                    )
+                except Exception:
+                    break  # Session is dead, stop keepalive
+        except asyncio.CancelledError:
+            pass
 
     async def reconnect(self, resume_context: str = "", prompt_override: str = "") -> bool:
         """Tear down and create fresh session with new instruction.
@@ -320,8 +341,16 @@ class GeminiLiveClient:
         if not self._precreated_session:
             return False
         try:
-            session, ctx = self._precreated_session
+            session, ctx, keepalive_task = self._precreated_session
             self._precreated_session = None
+
+            # Stop the keepalive — we're taking over this session
+            if keepalive_task and not keepalive_task.done():
+                keepalive_task.cancel()
+                try:
+                    await keepalive_task
+                except (asyncio.CancelledError, Exception):
+                    pass
 
             # Tear down current dead session
             await self._teardown()
