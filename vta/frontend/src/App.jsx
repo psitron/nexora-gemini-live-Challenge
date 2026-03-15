@@ -453,9 +453,12 @@ export default function App() {
       <main className="vta-main">
         {/* Left Panel */}
         <div className="left-panel">
-          <ChatTranscript messages={messages} />
-
-          <TaskProgress tasks={tasks} currentTaskId={currentTaskId} />
+          {sessionId && (
+            <>
+              <ChatTranscript messages={messages} />
+              <TaskProgress tasks={tasks} currentTaskId={currentTaskId} />
+            </>
+          )}
 
           <ConfirmationBar
             visible={showConfirmation}

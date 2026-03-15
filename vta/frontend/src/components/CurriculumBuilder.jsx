@@ -203,8 +203,7 @@ export default function CurriculumBuilder({ onSave, onCancel }) {
                 <label className="cb-label-sm">Slide Page #</label>
                 <input type="number" className="cb-input-sm" min="1" value={task.slide_number || ''} onChange={(e) => updateTask(ti, 'slide_number', parseInt(e.target.value) || 1)} />
               </div>
-              <label className="cb-label-sm">What Nexora should explain about this slide:</label>
-              <textarea className="cb-textarea" placeholder="Content for Nexora to narrate..." value={task.slide_context || ''} onChange={(e) => updateTask(ti, 'slide_context', e.target.value)} rows={3} />
+              <div className="cb-ai-note">Nexora will read and narrate this slide using AI vision.</div>
             </>)}
 
             {(task.type === 'practical' || task.type === 'vision') && (<>
