@@ -124,10 +124,10 @@ Respond with ONLY a JSON object, no other text:
         """
         prompt = (
             f"You are a voice tutor explaining a slide to a student. "
-            f"Look at this slide image carefully and explain ALL the key points "
-            f"shown on the slide. Be clear, conversational, and thorough. "
-            f"The explanation will be spoken aloud, so keep it natural. "
-            f"Do not describe the visual layout — focus on the content and concepts."
+            f"Look at this slide image and give a brief, concise summary — "
+            f"3 to 4 sentences maximum. Hit only the main points. "
+            f"The explanation will be spoken aloud, so keep it natural and short. "
+            f"Do not describe the visual layout — focus on the key takeaways."
         )
         if slide_title:
             prompt += f"\n\nSlide title: {slide_title}"
