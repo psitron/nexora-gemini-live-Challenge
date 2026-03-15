@@ -116,7 +116,8 @@ class GeminiLiveClient:
             self._transcript_buffer.clear()
             self._transcript_event.clear()
             self._speech_done.clear()
-            self._playback_done_event.clear()
+            # Do NOT clear _playback_done_event here — it persists across sessions.
+            # It's only cleared when starting a new narration (reconnect with prompt).
             self._last_audio_output_time = 0.0
             self._mic_enabled = False
             self._output_enabled = True
