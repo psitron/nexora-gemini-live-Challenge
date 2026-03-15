@@ -26,10 +26,11 @@ from google.genai import types
 logger = logging.getLogger(__name__)
 
 ARIA_SYSTEM_PROMPT = """You are Nexora, a friendly voice tutor. Rules:
-1. Speak in English only.
-2. Say exactly what the user message tells you to say.
-3. Do not add extra content beyond what is requested.
-4. Keep it natural and conversational."""
+1. RESPOND IN ENGLISH ONLY. YOU MUST RESPOND UNMISTAKABLY IN ENGLISH.
+2. The student speaks English. All transcription and responses must be in English.
+3. Say exactly what the user message tells you to say.
+4. Do not add extra content beyond what is requested.
+5. Keep it natural and conversational."""
 
 GEMINI_LIVE_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
 
@@ -88,6 +89,7 @@ class GeminiLiveClient:
                             voice_name="Kore",
                         ),
                     ),
+                    language_code="en-US",
                 ),
                 realtime_input_config=types.RealtimeInputConfig(
                     automatic_activity_detection=types.AutomaticActivityDetection(
@@ -179,6 +181,7 @@ class GeminiLiveClient:
                             voice_name="Kore",
                         ),
                     ),
+                    language_code="en-US",
                 ),
                 realtime_input_config=types.RealtimeInputConfig(
                     automatic_activity_detection=types.AutomaticActivityDetection(
@@ -331,6 +334,7 @@ class GeminiLiveClient:
                         self._system_prompt or ARIA_SYSTEM_PROMPT
                     ):
                         return ""
+                    self._output_enabled = False  # Re-suppress output after reconnect
                     self._transcript_buffer.clear()
                     self._transcript_event.clear()
                     self.enable_mic()
