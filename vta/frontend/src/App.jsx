@@ -336,7 +336,7 @@ export default function App() {
   return (
     <div className="vta-app">
       <header className="vta-header">
-        <h1>✦ Nexora</h1>
+        <h1>✦ Nexora AI</h1>
         {tutorialTitle && <span className="tutorial-title">{tutorialTitle}</span>}
         {sessionId && (
           <>
@@ -686,7 +686,7 @@ export default function App() {
           {rightPanel === 'welcome' && (
             <div className="welcome-panel">
               <div className="welcome-icon">&#10022;</div>
-              <h2 className="welcome-title">Welcome to Nexora</h2>
+              <h2 className="welcome-title">Welcome to Nexora AI</h2>
               <p className="welcome-subtitle">Select a course and press Start to begin your learning session.</p>
             </div>
           )}
