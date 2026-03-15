@@ -1,0 +1,99 @@
+{
+  "tutorial_id": "python_dataviz",
+  "title": "Python Data Visualization — From Code to Chart",
+  "description": "Learn data visualization with Python. Nexora will explain the concepts, write code, and generate a chart — all live on screen.",
+  "pdf_s3_key": "python_dataviz.pdf",
+  "pdf_url": "",
+  "tasks": [
+    {
+      "task_id": "T1",
+      "type": "theory",
+      "title": "What is Data Visualization?",
+      "slide_number": 1,
+      "slide_context": null,
+      "sonic_prompt": null,
+      "subtasks": []
+    },
+    {
+      "task_id": "T2",
+      "type": "theory",
+      "title": "Python Libraries: Matplotlib & Pandas",
+      "slide_number": 2,
+      "slide_context": null,
+      "sonic_prompt": null,
+      "subtasks": []
+    },
+    {
+      "task_id": "T3",
+      "type": "vision_driven",
+      "title": "Create a Python Chart Script",
+      "sonic_prompt": "Now let me write a Python script that creates a bar chart. Watch the terminal as I type the code.",
+      "slide_number": null,
+      "slide_context": null,
+      "subtasks": [
+        {
+          "subtask_id": "T3.1",
+          "title": "Open a terminal",
+          "sonic_prompt": "First, I will open a terminal on the desktop.",
+          "goal": "Open the XFCE terminal application on the desktop."
+        },
+        {
+          "subtask_id": "T3.2",
+          "title": "Create chart.py with matplotlib code",
+          "sonic_prompt": "Now I will create a Python file with matplotlib code to generate a bar chart.",
+          "goal": "In the terminal, run this exact command to create the chart script: cat > chart.py << 'EOF'\nimport matplotlib\nmatplotlib.use('Agg')\nimport matplotlib.pyplot as plt\n\ncategories = ['Python', 'JavaScript', 'Go', 'Rust', 'Java']\npopularity = [85, 78, 45, 40, 70]\ncolors = ['#3776ab', '#f7df1e', '#00add8', '#ce422b', '#f89820']\n\nplt.figure(figsize=(10, 6))\nplt.bar(categories, popularity, color=colors)\nplt.title('Programming Language Popularity 2025', fontsize=16, fontweight='bold')\nplt.ylabel('Popularity Score')\nplt.xlabel('Language')\nplt.tight_layout()\nplt.savefig('chart.png', dpi=100)\nprint('Chart saved as chart.png')\nEOF"
+        },
+        {
+          "subtask_id": "T3.3",
+          "title": "Run the script to generate the chart",
+          "sonic_prompt": "Now let me run the script to generate our chart.",
+          "goal": "In the terminal, type: python3 chart.py and press Enter. The output should say 'Chart saved as chart.png'."
+        }
+      ]
+    },
+    {
+      "task_id": "T4",
+      "type": "vision_driven",
+      "title": "Open Jupyter Notebook and Explore Data",
+      "sonic_prompt": "Now let me show you how to work with data in Jupyter Notebook using Pandas.",
+      "slide_number": null,
+      "slide_context": null,
+      "subtasks": [
+        {
+          "subtask_id": "T4.1",
+          "title": "Open Jupyter in Firefox",
+          "sonic_prompt": "I will open the Jupyter Notebook in the browser.",
+          "goal": "Open Firefox and navigate to http://localhost:8888. Jupyter Notebook should already be running."
+        },
+        {
+          "subtask_id": "T4.2",
+          "title": "Create a new Python notebook",
+          "sonic_prompt": "Now I will create a new Python notebook.",
+          "goal": "In the Jupyter file browser, click the 'New' dropdown button on the right side, then click 'Python 3' or 'Python 3 (ipykernel)' to create a new notebook."
+        },
+        {
+          "subtask_id": "T4.3",
+          "title": "Write and run Pandas code",
+          "sonic_prompt": "Let me type some Pandas code to analyze data and display it.",
+          "goal": "Click on the first empty code cell, then type: import pandas as pd\ndata = {'Language': ['Python', 'JavaScript', 'Go', 'Rust', 'Java'], 'Score': [85, 78, 45, 40, 70]}\ndf = pd.DataFrame(data)\nprint(df.to_string(index=False))\nThen press Shift+Enter to run the cell. The output should display a formatted table."
+        }
+      ]
+    },
+    {
+      "task_id": "T5",
+      "type": "vision_driven",
+      "title": "View the Generated Chart",
+      "sonic_prompt": "Finally, let me open the chart image we generated earlier so you can see the result.",
+      "slide_number": null,
+      "slide_context": null,
+      "subtasks": [
+        {
+          "subtask_id": "T5.1",
+          "title": "Open the chart image",
+          "sonic_prompt": "Let me open the chart we created.",
+          "goal": "In the terminal, type: xdg-open chart.png and press Enter. This should open the chart image in an image viewer."
+        }
+      ]
+    }
+  ]
+}
