@@ -172,6 +172,7 @@ async def run_tutorial(
     desc = tutorial.get('description', 'you will learn key concepts')
     welcome_prompt = (
         f"Speak ONLY these exact words, nothing more. Do not elaborate, ask questions, or add anything: "
+        f"Hi, I'm Nexora AI, your voice-driven tutor. "
         f"Welcome to {tutorial['title']}. {desc}. "
         f"Say ready when you want to begin."
     )
