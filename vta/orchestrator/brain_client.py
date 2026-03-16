@@ -123,11 +123,8 @@ Respond with ONLY a JSON object, no other text:
             Explanation text suitable for voice delivery.
         """
         prompt = (
-            f"You are a voice tutor explaining a slide to a student. "
-            f"Look at this slide image and give a brief, concise summary — "
-            f"3 to 4 sentences maximum. Hit only the main points. "
-            f"The explanation will be spoken aloud, so keep it natural and short. "
-            f"Do not describe the visual layout — focus on the key takeaways."
+            f"Summarize this slide in 2 sentences maximum. "
+            f"Spoken aloud — be natural and very brief. Key takeaways only."
         )
         if slide_title:
             prompt += f"\n\nSlide title: {slide_title}"
@@ -150,7 +147,7 @@ Respond with ONLY a JSON object, no other text:
                     )
                 ],
                 config=genai.types.GenerateContentConfig(
-                    max_output_tokens=1024,
+                    max_output_tokens=256,
                     temperature=0.5,
                 ),
             )
@@ -172,20 +169,17 @@ Respond with ONLY a JSON object, no other text:
         Returns:
             Concise answer string suitable for voice to speak
         """
-        prompt = f"""Answer this student's question concisely (2-3 sentences max).
-The answer will be spoken aloud by a voice tutor, so keep it conversational.
+        prompt = f"""Answer in 1-2 sentences. Spoken aloud, be brief.
 
 Context: {context}
-Question: {question}
-
-Answer:"""
+Question: {question}"""
 
         try:
             response = await self.client.aio.models.generate_content(
                 model=self.model_id,
                 contents=prompt,
                 config=genai.types.GenerateContentConfig(
-                    max_output_tokens=512,
+                    max_output_tokens=128,
                     temperature=0.5,
                 ),
             )
