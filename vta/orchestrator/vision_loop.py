@@ -155,7 +155,7 @@ class VisionLoop:
                 start_url = url_match.group(0).rstrip('.')
                 logger.info(f"Goal contains URL — navigating to: {start_url}")
                 try:
-                    await page.goto(start_url, wait_until="networkidle", timeout=30000)
+                    await page.goto(start_url, wait_until="domcontentloaded", timeout=15000)
                 except Exception as e:
                     logger.warning(f"Initial navigation failed: {e}")
                 await asyncio.sleep(3)  # Extra wait for Jupyter to fully render
@@ -400,7 +400,7 @@ Current screenshot:"""),
             url = args.get("url", "")
             logger.info(f"Navigating to: {url}")
             try:
-                await page.goto(url, wait_until="networkidle", timeout=30000)
+                await page.goto(url, wait_until="domcontentloaded", timeout=15000)
             except Exception:
                 await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             await asyncio.sleep(3)  # Wait for page to fully render
