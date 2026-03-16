@@ -52,9 +52,10 @@ RULES:
 4. As soon as the goal is achieved, return "done" IMMEDIATELY.
 5. NEVER install software.
 6. If the goal says to type something, use "run_command" or "type_text" — do NOT click first.
-7. If "run_command" appears in PREVIOUS ACTIONS for the same command, the command has ALREADY been executed. Return "done" — do NOT run it again.
+7. If "run_command" or "type_text" appears in PREVIOUS ACTIONS for the same target, it has ALREADY been done. Return "done" — do NOT do it again.
 8. The terminal is already focused — go straight to typing commands.
-9. NEVER execute the same command more than once. One run_command or one type_text+enter is enough.
+9. NEVER execute the same command or type the same text more than once.
+10. For "done" action: keep target SHORT (under 50 chars). Do NOT repeat the full typed text in target.
 
 Return ONE JSON object only. No markdown, no explanation.
 Format: {{"action_type":"...","target":"...","description":"..."}}"""
@@ -238,7 +239,7 @@ class DesktopVisionLoop:
                             )
                         ],
                         config=types.GenerateContentConfig(
-                            max_output_tokens=1024,
+                            max_output_tokens=2048,
                             temperature=0.1,
                         ),
                     ),
