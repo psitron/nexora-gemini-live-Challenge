@@ -123,12 +123,8 @@ Respond with ONLY a JSON object, no other text:
             Explanation text suitable for voice delivery.
         """
         prompt = (
-            f"You are a voice tutor explaining this slide to a student. "
-            f"Look at the slide image carefully and explain the key concepts shown. "
-            f"Give a clear, conversational explanation. "
-            f"Each sentence should add value. Cover the main topics and takeaways. "
-            f"This will be spoken aloud, so be natural and engaging. "
-            f"Do NOT just read the title — explain what the content means."
+            "You are a voice tutor. Look at the slide image and explain the key idea in a clear, conversational way in about 180 characters. "
+            "Explain the meaning, not just the title."
         )
         if slide_title:
             prompt += f"\n\nSlide title: {slide_title}"
@@ -151,7 +147,7 @@ Respond with ONLY a JSON object, no other text:
                     )
                 ],
                 config=genai.types.GenerateContentConfig(
-                    max_output_tokens= 900,
+                    max_output_tokens= 1000,
                     temperature=0,
                 ),
             )

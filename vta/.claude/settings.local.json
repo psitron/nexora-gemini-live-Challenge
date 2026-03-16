@@ -17,7 +17,17 @@
       "Bash(find E:/ui-agent/perception -type f -name \"*.py\" | sort 2>/dev/null; find E:/ui-agent/execution -type f -name \"*.py\" | sort)",
       "Bash(cd /e/ui-agent && scp -o StrictHostKeyChecking=no -i ~/.ssh/vta-key.pem vta/orchestrator/orchestrator.py ubuntu@13.222.15.168:/opt/vta/vta/orchestrator/orchestrator.py 2>&1 || echo \"Trying without pem...\" && scp -o StrictHostKeyChecking=no vta/orchestrator/orchestrator.py ubuntu@13.222.15.168:/opt/vta/vta/orchestrator/orchestrator.py 2>&1)",
       "Bash(scp -o StrictHostKeyChecking=no -i \"/mnt/e/MLOps/VTA-Server.ppk\" /mnt/e/ui-agent/vta/orchestrator/orchestrator.py ubuntu@13.222.15.168:/opt/vta/vta/orchestrator/orchestrator.py 2>&1)",
-      "Bash(wslpath \"E:/ui-agent/vta/orchestrator/orchestrator.py\" 2>/dev/null || echo \"not wsl\")"
+      "Bash(wslpath \"E:/ui-agent/vta/orchestrator/orchestrator.py\" 2>/dev/null || echo \"not wsl\")",
+      "Bash(git push:*)",
+      "Bash(git add:*)",
+      "Bash(git rm:*)",
+      "Bash(find:*)",
+      "WebFetch(domain:codelabs.developers.google.com)",
+      "WebFetch(domain:google.github.io)",
+      "WebFetch(domain:ai.google.dev)",
+      "WebFetch(domain:docs.cloud.google.com)",
+      "Bash(grep:*)",
+      "Bash(ls:*)"
     ]
   }
 }
