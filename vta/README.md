@@ -78,7 +78,7 @@ Agent S3 (FastAPI REST, port 5001)
     |
     v
 Virtual Linux Desktop (Xvfb + XFCE + x11vnc)
-    |--- Display :1, 1920x1080
+    |--- Display :1, 1440x900
     |--- Streamed via noVNC to student browser
 ```
 

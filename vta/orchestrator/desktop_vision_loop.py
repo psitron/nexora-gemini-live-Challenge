@@ -25,8 +25,8 @@ from vta.orchestrator.agent_s3_client import AgentS3Client
 logger = logging.getLogger(__name__)
 
 MAX_STEPS = 15
-SCREEN_WIDTH = 1920
-SCREEN_HEIGHT = 1080
+SCREEN_WIDTH = 1440
+SCREEN_HEIGHT = 900
 VISION_MODEL = "gemini-3-flash-preview"
 
 PLANNING_PROMPT = """You are a Linux desktop automation agent. Look at this screenshot ({w}x{h} pixels) and decide the next action.

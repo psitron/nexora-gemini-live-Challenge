@@ -51,7 +51,7 @@ Connected to 3 sub-components:
 
 LAYER 4 — VIRTUAL LINUX DESKTOP (bottom)
 A box representing the GCE virtual machine:
-  - "Xvfb (Display :1, 1920x1080)"
+  - "Xvfb (Display :1, 1440x900)"
   - "XFCE Desktop Environment"
   - "x11vnc (VNC Server, Port 5900)"
   - Inside the desktop: Terminal windows, Firefox browser, Playwright Chromium — all visible
@@ -158,7 +158,7 @@ COLOR SCHEME:
                     ┌─────────────▼─────────────┐
                     │  Virtual Linux Desktop     │
                     │  Xvfb (Display :1)         │
-                    │  1920x1080 • XFCE          │
+                    │  1440x900 • XFCE          │
                     │  x11vnc → websockify       │
                     │  ┌────────┐ ┌───────────┐  │
                     │  │Terminal│ │ Chromium/  │  │

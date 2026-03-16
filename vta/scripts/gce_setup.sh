@@ -91,7 +91,7 @@ Description=X Virtual Frame Buffer
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/Xvfb :1 -screen 0 1920x1080x24
+ExecStart=/usr/bin/Xvfb :1 -screen 0 1440x900x24
 Restart=always
 
 [Install]

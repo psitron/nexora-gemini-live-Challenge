@@ -100,7 +100,7 @@ Description=X Virtual Frame Buffer
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/Xvfb :1 -screen 0 1920x1080x24
+ExecStart=/usr/bin/Xvfb :1 -screen 0 1440x900x24
 Restart=always
 
 [Install]
@@ -111,7 +111,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable xvfb
 sudo systemctl start xvfb
 
-echo "  Virtual display configured (1920x1080)."
+echo "  Virtual display configured (1440x900)."
 
 # ── Step 5: Polkit & Desktop Fixes ──────────────────────────────────
 echo "[5/8] Applying desktop fixes..."

@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 MAX_STEPS = 20
 
 # Browser viewport size — match Xvfb display (1280x800)
-SCREEN_WIDTH = 1920
-SCREEN_HEIGHT = 1080
+SCREEN_WIDTH = 1440
+SCREEN_HEIGHT = 900
 
 # Gemini Computer Use model
 COMPUTER_USE_MODEL = "gemini-3-flash-preview"
