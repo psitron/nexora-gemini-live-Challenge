@@ -359,9 +359,9 @@ export default function App() {
         <button
           className="model-config-btn"
           onClick={() => setShowModelConfig(!showModelConfig)}
-          title="Configuration"
+          title="AI Models & Configuration"
         >
-          &#9881;
+          &#9881; AI Models
         </button>
         <span className={`connection-status ${isConnected ? 'connected' : 'disconnected'}`}>
           {isConnected ? 'Connected' : 'Disconnected'}
@@ -661,7 +661,8 @@ export default function App() {
             <div className="welcome-panel">
               <div className="welcome-icon">&#10022;</div>
               <h2 className="welcome-title">Welcome to Nexora AI</h2>
-              <p className="welcome-subtitle">Select a course and press Start to begin your learning session.</p>
+              <p className="welcome-subtitle">by Psitron Technologies</p>
+              <p className="welcome-subtitle" style={{ marginTop: '12px', fontSize: '14px' }}>Select a course and press Start to begin your learning session.</p>
             </div>
           )}
 
