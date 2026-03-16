@@ -123,8 +123,10 @@ Respond with ONLY a JSON object, no other text:
             Explanation text suitable for voice delivery.
         """
         prompt = (
-            f"Summarize this slide in 2 sentences maximum. "
-            f"Spoken aloud — be natural and very brief. Key takeaways only."
+            f"You are a voice tutor explaining this slide to a student. "
+            f"Give a clear, conversational summary in 4 to 5 sentences. "
+            f"Cover the main points shown on the slide. "
+            f"This will be spoken aloud, so keep it natural — not too short, not too long."
         )
         if slide_title:
             prompt += f"\n\nSlide title: {slide_title}"
@@ -147,7 +149,7 @@ Respond with ONLY a JSON object, no other text:
                     )
                 ],
                 config=genai.types.GenerateContentConfig(
-                    max_output_tokens=256,
+                    max_output_tokens=512,
                     temperature=0.5,
                 ),
             )
