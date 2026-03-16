@@ -1,0 +1,68 @@
+{
+  "tutorial_id": "desktop_skills_workshop",
+  "title": "Desktop Skills Workshop",
+  "description": "Hands-on desktop automation — open apps, type, save files, and navigate the file system.",
+  "pdf_s3_key": "",
+  "tasks": [
+    {
+      "task_id": "T1",
+      "type": "vision_driven",
+      "title": "Open a Text Editor",
+      "sonic_prompt": "Let me show you how to open a text editor on the Linux desktop.",
+      "slide_number": null,
+      "slide_context": null,
+      "subtasks": [
+        {
+          "subtask_id": "T1.1",
+          "title": "Open Mousepad",
+          "sonic_prompt": "First, I will open the Mousepad text editor.",
+          "goal": "Open the Mousepad text editor. Right-click on the desktop and look for 'Open Terminal Here', or find Mousepad in the application menu. Alternatively, open a terminal and run 'mousepad' command."
+        }
+      ]
+    },
+    {
+      "task_id": "T2",
+      "type": "vision_driven",
+      "title": "Type and Save a File",
+      "sonic_prompt": "Now I will type some text and save it as a file.",
+      "slide_number": null,
+      "slide_context": null,
+      "subtasks": [
+        {
+          "subtask_id": "T2.1",
+          "title": "Type text in the editor",
+          "sonic_prompt": "Let me type a message in the text editor.",
+          "goal": "Click on the text area in the Mousepad editor and type 'Hello from Nexora AI! This file was created during the Desktop Skills Workshop.'"
+        },
+        {
+          "subtask_id": "T2.2",
+          "title": "Save the file",
+          "sonic_prompt": "Now I will save this file.",
+          "goal": "Press Ctrl + S to open the Save dialog. Select Desktop from the left panel as the save location, enter nexora_demo.txt as the filename, and click Save."
+        }
+      ]
+    },
+    {
+      "task_id": "T3",
+      "type": "vision_driven",
+      "title": "Verify the File in Terminal",
+      "sonic_prompt": "Let me open a terminal and verify that our file was saved correctly.",
+      "slide_number": null,
+      "slide_context": null,
+      "subtasks": [
+        {
+          "subtask_id": "T3.1",
+          "title": "Open Terminal",
+          "sonic_prompt": "First, I will open a terminal window.",
+          "goal": "Open the XFCE terminal. Look for the terminal icon in the taskbar at the bottom of the screen, or right-click on the desktop and select 'Open Terminal Here'."
+        },
+        {
+          "subtask_id": "T3.2",
+          "title": "Read the saved file",
+          "sonic_prompt": "Now I will display the contents of the file we just saved.",
+          "goal": "If a terminal is already open, press Ctrl + Z to return to the terminal prompt. Since the file was saved on the Desktop, navigate to the Desktop directory. Then run cat nexora_demo.txt and press Enter to view the contents of the file."
+        }
+      ]
+    }
+  ]
+}
