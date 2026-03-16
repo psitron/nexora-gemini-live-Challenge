@@ -74,7 +74,7 @@ export default function App() {
   const [sessionId, setSessionId] = useState(null);
   const [tutorialTitle, setTutorialTitle] = useState('');
   const [pdfUrl, setPdfUrl] = useState('');
-  const [executionMode, setExecutionMode] = useState('demo_only');
+  const [executionMode, setExecutionMode] = useState('follow_along_paced');
   const [brainModel, setBrainModel] = useState(localStorage.getItem('vta_brain_model') || 'flash');
   const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
   const [selectedTutorialId, setSelectedTutorialId] = useState(null);
@@ -619,24 +619,6 @@ export default function App() {
 
               {/* Settings (only show when a course is selected) */}
               {selectedTutorialId && (<>
-              <div className="mode-selector">
-                <label className="mode-selector-label">Tutorial Mode:</label>
-                {EXECUTION_MODES.map((mode) => (
-                  <label key={mode.value} className="mode-option">
-                    <input
-                      type="radio"
-                      name="executionMode"
-                      value={mode.value}
-                      checked={executionMode === mode.value}
-                      onChange={(e) => setExecutionMode(e.target.value)}
-                    />
-                    <div className="mode-option-content">
-                      <span className="mode-option-label">{mode.label}</span>
-                      <span className="mode-option-desc">{mode.description}</span>
-                    </div>
-                  </label>
-                ))}
-              </div>
               <button
                 className="start-btn"
                 onClick={handleStartSession}
