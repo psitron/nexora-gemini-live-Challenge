@@ -353,7 +353,7 @@ async def execute_theory_task(
             explanation = f"This slide covers: {task.get('title', 'the topic')}."
 
         logger.info(f"[THEORY] Explanation ({len(explanation)} chars): {explanation[:200]}")
-        prompt = f"Speak ONLY these exact words, nothing more. Do not elaborate, ask questions, or add anything:\n\n{explanation}\n\n{closing}"
+        prompt = f"Read ALL of the following content to the student. Do not skip, summarize, or shorten — read every sentence:\n\n{explanation}\n\n{closing}"
     else:
         # Fallback: use text context if no image available
         context = task.get("slide_context", "") or f"This slide covers: {task['title']}."
