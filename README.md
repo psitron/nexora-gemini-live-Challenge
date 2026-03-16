@@ -4,7 +4,7 @@
 
 Nexora AI is a multimodal AI tutoring agent that **sees**, **hears**, and **speaks** — moving beyond the text box to deliver immersive, real-time learning experiences. It combines Gemini's Live API for natural voice interaction with vision-based desktop and browser automation to teach students hands-on skills.
 
-![Architecture Diagram](architecture.png)
+![Architecture Diagram](docs/architecture.png)
 
 ## What Nexora AI Does
 
