@@ -361,7 +361,7 @@ export default function App() {
           onClick={() => setShowModelConfig(!showModelConfig)}
           title="AI Models & Configuration"
         >
-          &#9881; <span style={{ fontSize: '11px', marginLeft: '4px' }}>Models</span>
+          &#9881;
         </button>
         <span className={`connection-status ${isConnected ? 'connected' : 'disconnected'}`}>
           {isConnected ? 'Connected' : 'Disconnected'}
