@@ -165,11 +165,7 @@ async def run_tutorial(
     mode = exec_config.mode if exec_config else ExecutionMode.DEMO_ONLY
     logger.info(f"Starting tutorial '{tutorial_id}' in mode: {mode.value}")
 
-    # Prefetch first slide while welcome plays
     pdf_key = tutorial.get("pdf_s3_key", "")
-    first_theory = next((t for t in tasks if t["type"] == "theory" and t.get("slide_number")), None)
-    if first_theory and pdf_key:
-        _start_prefetch(brain, pdf_key, first_theory["slide_number"])
 
     # Welcome — reconnect with welcome prompt, wait for student to say ready
     desc = tutorial.get('description', 'you will learn key concepts')
