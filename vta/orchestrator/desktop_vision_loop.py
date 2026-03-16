@@ -85,6 +85,26 @@ def _parse_action(response_text: str) -> Optional[dict]:
     text = re.sub(r'```json\s*', '', text)
     text = re.sub(r'```\s*', '', text)
     text = text.strip()
+
+    # Try matching complete JSON object (handles nested quotes)
+    # First try: find outermost { ... }
+    start = text.find('{')
+    if start == -1:
+        return None
+    # Find the matching closing brace
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == '{':
+            depth += 1
+        elif text[i] == '}':
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start:i+1])
+                except json.JSONDecodeError:
+                    break
+
+    # Fallback: try simple regex
     match = re.search(r'\{[^}]*\}', text, re.DOTALL)
     if not match:
         return None
@@ -231,17 +251,21 @@ class DesktopVisionLoop:
                 logger.error(f"Gemini vision error: {e}")
                 continue
 
+            # Log finish reason and full response for diagnostics
+            finish_reason = getattr(response.candidates[0], 'finish_reason', 'UNKNOWN') if response.candidates else 'NO_CANDIDATES'
+            logger.info(f"Finish reason: {finish_reason}")
+
             if not response.text:
                 logger.warning("Empty response")
                 continue
 
             response_text = response.text.strip()
-            logger.info(f"AI response: {response_text[:200]}")
+            logger.info(f"AI response ({len(response_text)} chars): {response_text[:300]}")
 
             # Parse action
             action = _parse_action(response_text)
             if not action:
-                logger.warning(f"Could not parse action from: {response_text[:100]}")
+                logger.warning(f"Could not parse action ({len(response_text)} chars total): {response_text}")
                 continue
 
             action_type = action.get("action_type", "").lower()
