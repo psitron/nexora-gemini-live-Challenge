@@ -1,5 +1,99 @@
 # Nexora AI — Complete Architecture
 
+## Architecture Diagram Prompt
+
+Use this prompt with an AI image generator (e.g., Napkin AI, Eraser.io, or similar) to create the architecture diagram:
+
+```
+Create a professional software architecture diagram for "Nexora AI — Voice-Driven AI Tutor" with a dark theme and clean layout.
+
+The diagram should show these layers from top to bottom:
+
+LAYER 1 — STUDENT BROWSER (top)
+A browser window containing 4 panels side by side:
+- "Slide Viewer (PDF.js)" — displays course slides
+- "Chat Transcript (Real-time)" — shows conversation text streaming word by word
+- "Desktop Viewer (noVNC)" — shows live Linux desktop stream
+- "Mic / Audio (Web Audio API)" — captures student voice and plays Nexora's voice
+Below these panels: "React Frontend (Port 3000)" with "useWebSocket + useAudioStream hooks"
+
+LAYER 2 — NGINX REVERSE PROXY (middle)
+A horizontal bar showing:
+- HTTPS Port 443 (SSL)
+- Route: / → Frontend :3000
+- Route: /ws → Orchestrator :5000 (WebSocket)
+- Route: /api/ → Orchestrator :5000 (REST)
+- Route: /vnc/ → noVNC :6080
+- Route: /websockify → VNC WebSocket :6080
+- HTTP Port 80 → redirect to 443
+
+LAYER 3 — BACKEND SERVICES (below nginx)
+Four boxes connected to nginx:
+
+Box 1: "Frontend Service (Port 3000)" — Vite + React
+
+Box 2: "Orchestrator (Port 5000)" — FastAPI + WebSocket
+This is the central hub. It connects to:
+  - Left arrow to: "Gemini Live API" cloud box (Voice Stream, bidirectional audio, Model: gemini-2.5-flash-native-audio)
+  - Right arrow to: "Brain Client" box (Intent Classification + Q&A + Slide Explanation, Model: gemini-3-flash-preview)
+  - Down arrow splits into TWO paths:
+    Path A: "Desktop Vision Loop" → "Desktop Automation Agent (Port 5001)" FastAPI REST
+    Path B: "Browser Vision Loop" → "Playwright + Chromium" (runs on virtual desktop)
+  Both vision loops use: Model: gemini-3-flash-preview
+
+Box 3: "noVNC Service (Port 6080)" — websockify bridge
+
+Box 4: "Desktop Automation Agent (Port 5001)" — FastAPI REST API
+Connected to 3 sub-components:
+  - "Screenshot Capture (mss)" — captures virtual display
+  - "Desktop Actions (xdotool + pyautogui)" — click, type, keyboard, open terminal, run command
+  - "Reflex Verifier (xdotool)" — post-action verification
+
+LAYER 4 — VIRTUAL LINUX DESKTOP (bottom)
+A box representing the GCE virtual machine:
+  - "Xvfb (Display :1, 1920x1080)"
+  - "XFCE Desktop Environment"
+  - "x11vnc (VNC Server, Port 5900)"
+  - Inside the desktop: Terminal windows, Firefox browser, Playwright Chromium — all visible
+  - Arrow from x11vnc → websockify → noVNC → Student Browser (completing the desktop streaming loop)
+
+CONNECTIONS TO SHOW:
+- Student mic audio flows: Browser → WebSocket → Orchestrator → Gemini Live API
+- Gemini Live audio flows back: Gemini Live API → Orchestrator → WebSocket → Browser speaker
+- Desktop vision flow: Orchestrator → Desktop Automation Agent → screenshot → Gemini Flash → action → Desktop Automation Agent → executes on desktop
+- Browser vision flow: Orchestrator → Playwright → screenshot → Gemini Computer Use → Playwright executes on Chromium
+- Desktop stream: Xvfb → x11vnc → websockify → nginx → noVNC in browser
+
+CLOUD LABELS:
+- Google Compute Engine (wrapping the entire backend)
+- "Google GenAI SDK" label near the Gemini connections
+- "Gemini Live API" for voice
+- "Gemini Flash" for brain + vision
+- "Gemini Computer Use" for browser automation
+
+COLOR SCHEME:
+- Dark background (#0f1117)
+- Blue accents for Gemini/Google services (#4285f4)
+- Purple accents for voice (#818cf8)
+- Green accents for success/status (#4ade80)
+- White/light text for labels
+```
+
+---
+
+## Component Names (Hackathon-Ready)
+
+| Internal Code Name | Public Name | Purpose |
+|-------------------|-------------|---------|
+| Agent S3 | **Desktop Automation Agent** | Executes desktop actions via xdotool/pyautogui |
+| Sonic / GeminiLiveClient | **Nexora Voice Engine** | Bidirectional voice via Gemini Live API |
+| Brain Client | **Intent & Knowledge Engine** | Classifies student intent, answers questions, explains slides |
+| Desktop Vision Loop | **Desktop Vision Planner** | Screenshots desktop → Gemini plans actions |
+| Browser Vision Loop | **Browser Automation Agent** | Playwright + Gemini Computer Use for web tasks |
+| Orchestrator | **Session Orchestrator** | Coordinates all components for tutorial execution |
+
+---
+
 ## High-Level Overview
 
 ```
@@ -11,280 +105,162 @@
 │  │ (PDF.js)     │  │ Transcript   │  │ Viewer      │  │ (WebAudio)│ │
 │  │              │  │ (Real-time)  │  │ (noVNC)     │  │           │ │
 │  └──────┬───────┘  └──────┬───────┘  └──────┬──────┘  └─────┬─────┘ │
-│         │                 │                  │               │       │
 │         └────────────┬────┴──────────────────┴───────────────┘       │
 │                      │                                               │
 │               React Frontend (Port 3000)                             │
-│               useWebSocket / useAudioStream hooks                    │
 └──────────────────────┬───────────────────────────────────────────────┘
-                       │
                        │ HTTPS (Port 443)
-                       │
          ┌─────────────▼──────────────┐
          │    nginx Reverse Proxy      │
-         │                             │
-         │  /        → :3000 Frontend  │
-         │  /ws      → :5000 WebSocket │
-         │  /api/    → :5000 REST API  │
-         │  /vnc/    → :6080 noVNC     │
-         │  /websockify → :6080 VNC WS │
-         │                             │
-         │  SSL: Self-signed cert      │
-         │  HTTP :80 → redirect :443   │
+         │  /     → :3000 Frontend     │
+         │  /ws   → :5000 WebSocket    │
+         │  /api/ → :5000 REST API     │
+         │  /vnc/ → :6080 noVNC        │
          └─────────────┬──────────────┘
                        │
-     ┌─────────────────┼──────────────────────┐
-     │                 │                      │
-     ▼                 ▼                      ▼
-┌─────────┐   ┌───────────────┐      ┌──────────────┐
-│Frontend │   │ Orchestrator  │      │   noVNC       │
-│  :3000  │   │    :5000      │      │   :6080       │
-│ Vite    │   │  FastAPI +    │      │  websockify   │
-│ React   │   │  WebSocket    │      │       │       │
-└─────────┘   └───────┬───────┘      │       ▼       │
-                      │               │  x11vnc :5900 │
-                      │               │       │       │
-                      │               │       ▼       │
-                      │               │  Xvfb :1      │
-                      │               │  1920x1080    │
-                      │               │  XFCE Desktop │
-                      │               └──────────────┘
-                      │
-    ┌─────────────────┼─────────────────────────┐
-    │                 │                         │
-    ▼                 ▼                         ▼
-┌────────┐   ┌──────────────┐          ┌──────────────┐
-│Gemini  │   │  Brain       │          │  Agent S3    │
-│Live API│   │  Client      │          │   :5001      │
-│        │   │              │          │  FastAPI     │
-│Voice   │   │Intent + Q&A  │          │  REST API    │
-│Stream  │   │Slide Explain │          └──────┬───────┘
-└────────┘   └──────────────┘                 │
-                                              │
-                              ┌───────────────┼───────────────┐
-                              │               │               │
-                              ▼               ▼               ▼
-                        ┌──────────┐  ┌────────────┐  ┌────────────┐
-                        │Screenshot│  │  xdotool   │  │  Reflex    │
-                        │ (mss)    │  │ pyautogui  │  │ Verifier   │
-                        │          │  │            │  │ (xdotool   │
-                        │ Capture  │  │ Click,Type │  │  checks)   │
-                        │ desktop  │  │ Keyboard   │  │            │
-                        └──────────┘  └────────────┘  └────────────┘
-```
+    ┌──────────────────┼──────────────────────┐
+    │                  │                      │
+    ▼                  ▼                      ▼
+┌────────┐    ┌────────────────┐      ┌──────────────┐
+│Frontend│    │  Session       │      │   noVNC       │
+│ :3000  │    │  Orchestrator  │      │   :6080       │
+│ React  │    │    :5000       │      │  websockify   │
+└────────┘    └───────┬────────┘      └──────┬───────┘
+                      │                      │
+         ┌────────────┼────────────┐         │
+         │            │            │         │
+         ▼            ▼            ▼         ▼
+   ┌──────────┐ ┌──────────┐ ┌─────────┐ ┌────────┐
+   │ Nexora   │ │ Intent & │ │Desktop  │ │Browser │
+   │ Voice    │ │Knowledge │ │Vision   │ │Autom.  │
+   │ Engine   │ │ Engine   │ │Planner  │ │Agent   │
+   │          │ │          │ │    │    │ │   │    │
+   │ Gemini   │ │ Gemini   │ │    ▼    │ │   ▼    │
+   │ Live API │ │ Flash    │ │Desktop  │ │Playwright
+   │ Native   │ │          │ │Autom.   │ │Chromium│
+   │ Audio    │ │classify_ │ │Agent    │ │        │
+   │          │ │intent()  │ │ :5001   │ │ On     │
+   │ Bidir.   │ │answer_   │ │         │ │DISPLAY │
+   │ voice    │ │question()│ │xdotool  │ │  :1    │
+   │ stream   │ │explain_  │ │pyauto   │ │        │
+   └──────────┘ │slide()   │ │gui      │ └────────┘
+                └──────────┘ └────┬────┘
+                                  │
+                    ┌─────────────┼─────────────┐
+                    │             │             │
+                    ▼             ▼             ▼
+              ┌──────────┐ ┌──────────┐ ┌──────────┐
+              │Screenshot│ │ Desktop  │ │ Reflex   │
+              │ Capture  │ │ Actions  │ │ Verifier │
+              │ (mss)    │ │(xdotool) │ │(xdotool) │
+              └──────────┘ └──────────┘ └──────────┘
+                                  │
+                    ┌─────────────▼─────────────┐
+                    │  Virtual Linux Desktop     │
+                    │  Xvfb (Display :1)         │
+                    │  1920x1080 • XFCE          │
+                    │  x11vnc → websockify       │
+                    │  ┌────────┐ ┌───────────┐  │
+                    │  │Terminal│ │ Chromium/  │  │
+                    │  │Windows │ │ Firefox    │  │
+                    │  └────────┘ └───────────┘  │
+                    └────────────────────────────┘
 
-## Detailed Data Flow
-
-### 1. Voice Interaction Flow
-
-```
-Student speaks into browser mic
-    │
-    ▼
-useAudioStream.js (kept alive, sendingRef gate)
-    │ PCM 16kHz mono → base64
-    ▼
-WebSocket → event: "student_audio"
-    │
-    ▼
-Orchestrator (main.py)
-    │ add_audio_chunk() → _audio_input_queue
-    ▼
-gemini_live_client.py → _audio_sender_loop
-    │ send_realtime_input(audio blob)
-    ▼
-Gemini Live API (gemini-2.5-flash-native-audio-preview-12-2025)
-    │
-    ├── input_transcription → [STUDENT] text chunks
-    │   │ Streamed to frontend via transcript_callback
-    │   ▼
-    │   _settle_transcript (3s silence) → transcript captured
-    │
-    └── model audio response (when Nexora speaks)
-        │ output audio chunks → audio_output_callback
-        │ output_transcription → [Nexora] text chunks
-        ▼
-        WebSocket → event: "audio_chunk" + "transcript_update"
-            │
-            ▼
-        Browser plays audio via Web Audio API (24kHz)
-```
-
-### 2. Theory Task Flow (Slide Narration)
-
-```
-Orchestrator: execute_theory_task()
-    │
-    ├── 1. ws_send("show_slide", page: N)
-    │       → Frontend switches to slide viewer
-    │       → PDF.js renders the slide
-    │
-    ├── 2. extract_slide_image(pdf_path, page_number)
-    │       → PyMuPDF (fitz) renders page as PNG (200 DPI)
-    │
-    ├── 3. brain.explain_slide(image_bytes)
-    │       → Gemini Flash: "Summarize in 2 sentences"
-    │       → Returns spoken explanation text
-    │       Model: gemini-3-flash-preview
-    │
-    ├── 4. sonic.reconnect(prompt=explanation)
-    │       → Gemini Live speaks the explanation
-    │       → Audio streamed to browser
-    │
-    └── 5. sonic.wait_for_student_speech()
-            → Student responds via voice
-            → Brain classifies intent
-```
-
-### 3. Desktop Vision Task Flow
-
-```
-Orchestrator: execute_desktop_vision_task()
-    │
-    ├── 1. ws_send("show_desktop")
-    │       → Frontend switches to noVNC panel
-    │
-    ├── 2. Nexora narrates intro via Gemini Live
-    │
-    └── 3. For each subtask:
-            │
-            ▼
-        DesktopVisionLoop.run(goal="Open terminal")
-            │
-            ├── Agent S3: POST /action/screenshot
-            │       → mss captures DISPLAY :1
-            │       → Returns base64 PNG
-            │
-            ├── Gemini Flash: generateContent(screenshot + goal)
-            │       Model: gemini-3-flash-preview
-            │       → Returns JSON: {"action_type":"open_terminal"}
-            │
-            ├── Agent S3: POST /action/open_terminal
-            │       → xdotool: xfce4-terminal launches
-            │
-            ├── Agent S3: POST /action/screenshot (verify)
-            │       → New screenshot captured
-            │
-            ├── Gemini Flash: generateContent(new screenshot + goal)
-            │       → Returns: {"action_type":"done","target":"Terminal is open"}
-            │
-            └── Loop ends → Nexora narrates result naturally
-                    via Gemini Live
-```
-
-### 4. Browser Vision Task Flow
-
-```
-Orchestrator: execute_vision_task()
-    │
-    ├── 1. ws_send("show_desktop")
-    │
-    ├── 2. Nexora narrates intro via Gemini Live
-    │
-    └── 3. For each subtask:
-            │
-            ▼
-        VisionLoop.run(goal="Navigate to gemini.google.com")
-            │
-            ├── Playwright: Launch Chromium on DISPLAY :1
-            │       → Visible in noVNC panel
-            │
-            ├── page.screenshot() → PNG bytes
-            │
-            ├── Gemini Computer Use: generateContent(screenshot + goal)
-            │       Model: gemini-3-flash-preview
-            │       Tools: Computer Use function declarations
-            │       → Returns: function_call: navigate({url: "..."})
-            │
-            ├── Playwright: page.goto(url)
-            │
-            ├── page.screenshot() → FunctionResponse with new screenshot
-            │
-            ├── Gemini: Next action or "done" (text response)
-            │
-            └── Loop ends → Nexora narrates result
-```
-
-### 5. Student Response Flow
-
-```
-Student speaks after task completion
-    │
-    ▼
-wait_for_student_speech()
-    │ Session may die → swap to pre-created session (with keepalive)
-    │ _settle_transcript (3s) → transcript captured
-    ▼
-handle_student_response(transcript)
-    │
-    ├── is_simple_yes(transcript)?
-    │   YES → return (next task)
-    │
-    ├── brain.classify_intent(transcript, task_context)
-    │   Model: gemini-3-flash-preview
-    │   │
-    │   ├── "continue" → return (next task)
-    │   ├── "question" → brain.answer_question() → Nexora speaks answer
-    │   ├── "repeat"   → Re-run vision loop with repeat context
-    │   ├── "freestyle" → Extract goal → Run desktop vision loop
-    │   └── "wait"     → Nexora: "Take your time"
-    │
-    └── Loop: ask again until student says "ready"
+                 ─── Google Compute Engine (GCE) ───
 ```
 
 ## Gemini Models Used
 
-| Model ID | Component | Purpose | API |
-|----------|-----------|---------|-----|
-| `gemini-2.5-flash-native-audio-preview-12-2025` | gemini_live_client.py | Bidirectional voice streaming (Nexora's voice) | Gemini Live API |
-| `gemini-3-flash-preview` | brain_client.py | Intent classification, Q&A, slide explanation | generateContent |
-| `gemini-3-flash-preview` | desktop_vision_loop.py | Desktop screenshot → action planning (JSON) | generateContent |
-| `gemini-3-flash-preview` | vision_loop.py | Browser automation via Computer Use tool | generateContent (with tools) |
+| Model ID | Component | Purpose | API Type |
+|----------|-----------|---------|----------|
+| `gemini-2.5-flash-native-audio-preview-12-2025` | Nexora Voice Engine | Real-time bidirectional voice streaming | Gemini Live API |
+| `gemini-3-flash-preview` | Intent & Knowledge Engine | Intent classification, Q&A, slide vision explanation | generateContent |
+| `gemini-3-flash-preview` | Desktop Vision Planner | Screenshot → JSON action plan → Desktop Automation Agent executes | generateContent |
+| `gemini-3-flash-preview` | Browser Automation Agent | Screenshot → Computer Use function calls → Playwright executes | generateContent (with tools) |
 
-All models are accessed via **Google GenAI Python SDK** (`google-genai`).
+All accessed via **Google GenAI Python SDK** (`google-genai`).
+
+## Detailed Data Flows
+
+### Voice Flow
+```
+Student mic → Browser WebAudio (16kHz PCM) → WebSocket "student_audio"
+→ Orchestrator → add_audio_chunk() → _audio_input_queue
+→ _audio_sender_loop → send_realtime_input()
+→ Gemini Live API (gemini-2.5-flash-native-audio)
+→ input_transcription (student text) + model audio (Nexora voice)
+→ WebSocket "audio_chunk" + "transcript_update"
+→ Browser plays audio (24kHz) + displays transcript
+```
+
+### Desktop Vision Flow
+```
+Orchestrator receives subtask goal
+→ Desktop Automation Agent: POST /action/screenshot → mss captures DISPLAY :1
+→ Gemini Flash: generateContent(screenshot + goal + planning prompt)
+→ Returns JSON: {"action_type":"run_command","target":"echo hello"}
+→ Desktop Automation Agent: POST /action/run_command
+→ xdotool types command + presses Enter on virtual desktop
+→ Screenshot again → Gemini: "done" or next action
+→ Loop until done (max 15 steps)
+→ Nexora narrates result via Voice Engine
+```
+
+### Browser Vision Flow
+```
+Orchestrator receives subtask goal with URL/browser keywords
+→ Playwright launches Chromium on DISPLAY :1
+→ page.screenshot() → Gemini Computer Use: generateContent(screenshot + goal + tools)
+→ Returns function_call: type_text_at({x, y, text, press_enter})
+→ Playwright executes: page.mouse.click(x, y) + page.keyboard.type(text)
+→ page.screenshot() → FunctionResponse with new screenshot
+→ Loop until Gemini returns text (done) or max 20 steps
+→ Nexora narrates result via Voice Engine
+```
+
+### Student Intent Flow
+```
+Student speaks → transcript captured (3s settle)
+→ is_simple_yes()? → YES: continue to next task
+→ brain.classify_intent(transcript, context)
+   → "continue" → next task
+   → "question" → brain.answer_question() → Nexora speaks answer
+   → "repeat"   → re-run vision loop on current task
+   → "freestyle" → extract goal → run Desktop Vision Planner
+   → "wait"     → Nexora: "Take your time"
+→ Loop until student says "ready"
+```
 
 ## Service Port Map
 
-```
-┌──────────────────────────────────────────┐
-│           Google Compute Engine          │
-│           Ubuntu 22.04 LTS              │
-│           e2-standard-4                 │
-│                                          │
-│  Port 443 (HTTPS) ─── nginx ──────────┐ │
-│  Port 80  (HTTP)  ─── redirect → 443  │ │
-│                                        │ │
-│  Port 3000 ── React Frontend (Vite)    │ │
-│  Port 5000 ── Orchestrator (FastAPI)   │ │
-│  Port 5001 ── Agent S3 (FastAPI)       │ │
-│  Port 5900 ── x11vnc (VNC server)     │ │
-│  Port 6080 ── websockify (noVNC)      │ │
-│  Port 8888 ── Jupyter (optional)      │ │
-│                                        │ │
-│  DISPLAY :1 ── Xvfb 1920x1080x24     │ │
-│              └── XFCE Desktop          │ │
-│              └── Playwright Chromium   │ │
-│              └── Firefox               │ │
-│              └── xfce4-terminal        │ │
-└────────────────────────────────────────┘ │
-└──────────────────────────────────────────┘
-```
+| Port | Service | Public? | Protocol |
+|------|---------|---------|----------|
+| 443 | nginx (HTTPS) | Yes | HTTPS + WSS |
+| 80 | nginx (redirect) | Yes | HTTP → 443 |
+| 3000 | React Frontend | No (via nginx) | HTTP |
+| 5000 | Session Orchestrator | No (via nginx) | HTTP + WS |
+| 5001 | Desktop Automation Agent | No | HTTP REST |
+| 5900 | x11vnc | No | VNC |
+| 6080 | websockify / noVNC | No (via nginx) | HTTP + WS |
+| 8888 | Jupyter (optional) | No | HTTP |
 
 ## Session Lifecycle
 
 ```
-1. Browser connects → WebSocket /ws
-2. start_session {tutorial_id, execution_mode, api_key, brain_model}
+1. Browser → WebSocket /ws → Orchestrator
+2. start_session {tutorial_id, execution_mode, api_key, models}
 3. Orchestrator creates:
-   ├── GeminiLiveClient (voice)
-   ├── BrainClient (intent + Q&A)
-   ├── AgentS3Client (desktop actions)
-   └── ConfirmationManager
-4. Tutorial loop:
-   ├── Theory tasks → Slide image → Brain explains → Nexora speaks
-   ├── Vision tasks → Desktop/Browser loop → Nexora narrates
-   └── After each: wait_for_student_speech → classify → handle
-5. Tutorial complete → Nexora congratulates
-6. Desktop reset → wmctrl closes all windows
-7. session_complete event → Frontend returns to course list
+   ├── Nexora Voice Engine (Gemini Live session)
+   ├── Intent & Knowledge Engine (Gemini Flash client)
+   ├── Desktop Automation Agent client (HTTP)
+   └── Confirmation Manager
+4. Welcome → Nexora speaks → Student says "ready"
+5. Tutorial loop:
+   ├── Theory: Slide image → Brain explains → Nexora speaks
+   ├── Desktop: Vision Planner → Automation Agent → Nexora narrates
+   ├── Browser: Vision Loop → Playwright → Nexora narrates
+   └── After each: listen → classify intent → handle
+6. Last task: "That was our final step" → "Congratulations!"
+7. Desktop reset: wmctrl closes all windows
+8. session_complete → Frontend returns to course list
 ```
