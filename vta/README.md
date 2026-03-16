@@ -122,8 +122,8 @@ git clone https://github.com/03sarath/ui-agent.git
 cd ui-agent
 
 # 3. Run the deployment script
-chmod +x vta/deploy.sh
-bash vta/deploy.sh
+chmod +x deploy.sh
+bash deploy.sh
 
 # 4. Access the application
 # https://<EXTERNAL_IP>
@@ -194,8 +194,8 @@ git clone https://github.com/03sarath/ui-agent.git
 cd ui-agent
 
 # Run automated deployment
-chmod +x vta/deploy.sh
-bash vta/deploy.sh
+chmod +x deploy.sh
+bash deploy.sh
 ```
 
 ### Step 4: Verify Deployment
@@ -344,9 +344,9 @@ ui-agent/
       deploy_gcp.sh            # Create GCE instance via gcloud
     curriculum/                # Course JSON files
     pdfs/                      # Course PDF slides
-    deploy.sh                  # One-command automated deployment
     requirements.txt           # Python dependencies
-    README.md                  # This file
+  deploy.sh                    # One-command automated deployment (root)
+  README.md                    # This file
 ```
 
 ## Proof of Google Cloud Deployment
