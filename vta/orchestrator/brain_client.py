@@ -151,8 +151,8 @@ Respond with ONLY a JSON object, no other text:
                     )
                 ],
                 config=genai.types.GenerateContentConfig(
-                    max_output_tokens=2048,
-                    temperature=0.5,
+                    max_output_tokens=700,
+                    temperature=0.3,
                 ),
             )
 
