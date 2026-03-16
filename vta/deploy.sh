@@ -45,7 +45,7 @@ sudo apt-get update -y
 sudo apt-get install -y \
     python3 python3-pip python3-venv \
     nodejs npm \
-    xvfb xfce4 xfce4-terminal x11vnc websockify \
+    xvfb xfce4 xfce4-terminal x11vnc websockify mousepad \
     tesseract-ocr scrot xdotool wmctrl \
     nginx git curl wget unzip \
     libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
