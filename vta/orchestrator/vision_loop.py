@@ -156,9 +156,11 @@ class VisionLoop:
                 logger.info(f"Goal contains URL — navigating to: {start_url}")
                 try:
                     await page.goto(start_url, wait_until="domcontentloaded", timeout=15000)
+                    # Tell Gemini the page is already loaded so it doesn't navigate again
+                    goal = goal + f"\n\nNOTE: The browser has ALREADY navigated to {start_url}. The page is loaded. Do NOT navigate again — proceed with the next action on the page."
                 except Exception as e:
                     logger.warning(f"Initial navigation failed: {e}")
-                await asyncio.sleep(3)  # Extra wait for Jupyter to fully render
+                await asyncio.sleep(3)
 
             # Create screenshots directory for debugging
             screenshots_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "screenshots")
