@@ -125,7 +125,7 @@ Respond with ONLY a JSON object, no other text:
         prompt = (
             f"You are a voice tutor explaining this slide to a student. "
             f"Look at the slide image carefully and explain the key concepts shown. "
-            f"Give a clear, conversational explanation in 4 to 5 sentences. "
+            f"Give a clear, conversational explanation in 10 to 12 sentences. "
             f"Each sentence should add value. Cover the main topics and takeaways. "
             f"This will be spoken aloud, so be natural and engaging. "
             f"Do NOT just read the title — explain what the content means."
@@ -151,7 +151,7 @@ Respond with ONLY a JSON object, no other text:
                     )
                 ],
                 config=genai.types.GenerateContentConfig(
-                    max_output_tokens=512,
+                    max_output_tokens=1024,
                     temperature=0.5,
                 ),
             )
