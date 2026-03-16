@@ -142,6 +142,9 @@ async def run_tutorial(
     desktop_vision_model: str = None,
 ):
     """Main loop - runs the full tutorial from start to finish."""
+    _slide_cache.clear()
+    _slide_cache_tasks.clear()
+
     curriculum = get_curriculum_manager()
     state = get_session_state_manager()
 
